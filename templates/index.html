@@ -1,0 +1,2536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lighthouse — Hypothesis Testing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg:          #070d16;
+      --bg-surface:  #0b1521;
+      --bg-elevated: #101e2e;
+      --bg-input:    #090f1a;
+      --border:      #162233;
+      --border-mid:  #1e3249;
+      --border-hi:   #2c4868;
+      --amber:       #e8a020;
+      --amber-soft:  #c4841a;
+      --amber-glow:  rgba(232,160,32,0.10);
+      --amber-dim:   rgba(232,160,32,0.05);
+      --teal:        #00c99a;
+      --teal-glow:   rgba(0,201,154,0.08);
+      --red:         #ff4455;
+      --text:        #ccd8e8;
+      --text-soft:   #8aa0b8;
+      --text-muted:  #4d6880;
+      --text-dim:    #2d4660;
+      --font-serif:  'Cormorant Garamond', Georgia, serif;
+      --font-mono:   'IBM Plex Mono', monospace;
+      --radius:      3px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* HEADER */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      height: 54px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+      flex-shrink: 0;
+    }
+    .logo { display: flex; align-items: center; gap: 14px; }
+    .beacon { width: 26px; height: 26px; position: relative; flex-shrink: 0; }
+    .beacon-core {
+      width: 7px; height: 7px;
+      background: var(--amber);
+      border-radius: 50%;
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      box-shadow: 0 0 8px rgba(232,160,32,0.6);
+    }
+    .beacon-ring {
+      position: absolute; inset: 0;
+      border: 1px solid var(--amber);
+      border-radius: 50%; opacity: 0;
+      animation: pulse 2.8s ease-out infinite;
+    }
+    .beacon-ring:nth-child(2) { animation-delay: 0.9s; }
+    .beacon-ring:nth-child(3) { animation-delay: 1.8s; }
+    @keyframes pulse { 0% { transform: scale(0.15); opacity: 0.8; } 100% { transform: scale(1.1); opacity: 0; } }
+    .logo-name {
+      font-family: var(--font-serif);
+      font-size: 16px; font-weight: 600;
+      letter-spacing: 0.2em; color: var(--amber);
+      text-transform: uppercase;
+    }
+    .logo-sub { font-size: 9px; letter-spacing: 0.2em; color: var(--text-muted); text-transform: uppercase; display: block; margin-top: 2px; }
+    .api-status { display: flex; align-items: center; gap: 7px; font-size: 10px; letter-spacing: 0.12em; color: var(--text-muted); text-transform: uppercase; }
+    .status-dot { width: 6px; height: 6px; background: var(--text-dim); border-radius: 50%; flex-shrink: 0; transition: all 0.3s; }
+    .status-dot.live  { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+    .status-dot.error { background: var(--red);  box-shadow: 0 0 6px var(--red); }
+
+    /* LAYOUT */
+    .shell {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* LEFT PANEL */
+    .wizard-panel {
+      border-right: 1px solid var(--border);
+      background: var(--bg-surface);
+      overflow-y: auto;
+      padding: 32px 28px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    /* CONTROLS */
+    select {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border-mid);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 9px 12px;
+      border-radius: var(--radius);
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234d6880'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 30px;
+      transition: border-color 0.15s;
+    }
+    select:focus { border-color: var(--border-hi); }
+    select option { background: #0d1c2e; }
+
+    .field-group { margin-bottom: 14px; }
+    .field-label {
+      font-size: 9px; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--text-soft);
+      margin-bottom: 5px; display: flex; align-items: center; gap: 6px;
+    }
+    .field-optional { color: var(--text-dim); font-size: 8px; }
+    textarea, input[type="number"], input[type="text"] {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border-mid);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 11px; line-height: 1.6;
+      padding: 8px 11px;
+      border-radius: var(--radius);
+      outline: none; resize: vertical;
+      transition: border-color 0.15s;
+    }
+    textarea:focus, input:focus { border-color: var(--border-hi); }
+    textarea { min-height: 54px; }
+
+    .btn-row { display: flex; gap: 10px; padding-top: 10px; }
+    .btn {
+      font-family: var(--font-mono); font-size: 10px;
+      font-weight: 500; letter-spacing: 0.15em;
+      text-transform: uppercase; padding: 9px 20px;
+      border-radius: var(--radius); cursor: pointer;
+      border: 1px solid var(--border-mid); transition: all 0.15s;
+    }
+    .btn-run { background: var(--amber); color: var(--bg); border-color: var(--amber); }
+    .btn-run:hover { background: #f5af30; }
+    .btn-run:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-sample { background: transparent; color: var(--text-soft); }
+    .btn-sample:hover { border-color: var(--border-hi); color: var(--text); }
+    .btn-reset { background: transparent; color: var(--text-dim); }
+    .btn-reset:hover { border-color: var(--border-mid); color: var(--text-soft); }
+
+    /* SIGNIFICANCE CHIPS */
+    .sig-section { margin-bottom: 16px; }
+    .sig-section-title {
+      font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--text-soft); margin-bottom: 5px;
+    }
+    .sig-help {
+      font-size: 10px; color: var(--text-muted);
+      line-height: 1.6; margin-bottom: 10px;
+    }
+    .sig-options { display: flex; flex-direction: column; gap: 6px; }
+    .sig-chip {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+      padding: 10px 12px; border: 1px solid var(--border-mid);
+      border-radius: var(--radius); background: var(--bg-input);
+      cursor: pointer; text-align: left; transition: all 0.15s; width: 100%;
+    }
+    .sig-chip:hover { border-color: var(--border-hi); }
+    .sig-chip.selected { background: var(--amber-glow); border-color: rgba(232,160,32,0.4); }
+    .sig-chip-header { display: flex; align-items: baseline; gap: 9px; }
+    .sig-chip-value {
+      font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+      color: var(--text-soft);
+    }
+    .sig-chip.selected .sig-chip-value { color: var(--amber); }
+    .sig-chip-label {
+      font-size: 9px; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--text-muted);
+    }
+    .sig-chip.selected .sig-chip-label { color: var(--amber-soft); }
+    .sig-chip-desc { font-size: 10px; color: var(--text-muted); line-height: 1.5; }
+
+    /* UPLOAD ZONE */
+    .upload-zone {
+      border: 1px dashed var(--border-mid);
+      border-radius: var(--radius);
+      padding: 22px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--bg-input);
+      position: relative;
+      margin-bottom: 8px;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--amber);
+      background: var(--amber-dim);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+      width: 100%; height: 100%;
+    }
+    .upload-icon { font-size: 18px; opacity: 0.45; margin-bottom: 7px; }
+    .upload-text { font-size: 11px; color: var(--text-soft); line-height: 1.6; }
+    .upload-hint { font-size: 9px; color: var(--text-muted); margin-top: 4px; letter-spacing: 0.06em; }
+    .upload-preview {
+      padding: 10px 12px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-mid);
+      border-radius: var(--radius);
+      font-size: 10px; color: var(--text-soft); line-height: 1.7;
+      margin-bottom: 8px;
+    }
+    .upload-preview-label {
+      font-size: 8px; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--text-dim); margin-bottom: 4px;
+    }
+    .upload-preview-ok { color: var(--teal); }
+    .upload-preview-err { color: var(--red); }
+
+    /* DATA MODE TOGGLE */
+    .data-mode-toggle {
+      display: flex; margin-bottom: 10px;
+      border: 1px solid var(--border-mid);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .data-mode-btn {
+      flex: 1; padding: 7px 0;
+      font-family: var(--font-mono); font-size: 9px;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--text-muted); background: var(--bg-input);
+      border: none; cursor: pointer; transition: all 0.15s;
+    }
+    .data-mode-btn:hover { color: var(--text-soft); }
+    .data-mode-btn.active { background: var(--amber-glow); color: var(--amber); }
+
+    /* SECTION DIVIDER */
+    .data-divider {
+      font-size: 9px; letter-spacing: 0.25em; text-transform: uppercase;
+      color: var(--text-dim); padding-bottom: 8px;
+      border-bottom: 1px solid var(--border); margin-bottom: 14px; margin-top: 4px;
+    }
+
+    /* INFERENCE OVERRIDE */
+    .ft-override-row {
+      display: flex; align-items: center; gap: 8px; margin-top: 5px;
+    }
+    .ft-override-link {
+      font-size: 9px; letter-spacing: 0.1em; color: var(--text-dim);
+      cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+      text-decoration-color: var(--text-dim);
+      transition: color 0.15s;
+    }
+    .ft-override-link:hover { color: var(--text-muted); }
+    .ft-override-select {
+      margin-top: 6px;
+      padding: 8px 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-mid);
+      border-radius: var(--radius);
+    }
+    .ft-override-select select { font-size: 11px; }
+
+    .ft-infer-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 8px;
+      background: var(--amber-dim);
+      border: 1px solid rgba(232,160,32,0.15);
+      border-radius: 2px;
+      font-size: 9px; color: var(--amber-soft); letter-spacing: 0.1em;
+    }
+    .ft-infer-badge.uncertain {
+      background: rgba(200,150,80,0.07);
+      border-color: rgba(200,150,80,0.18);
+      color: #c9a060;
+    }
+    .ft-pending-hint {
+      font-size: 10px; color: var(--text-dim);
+      line-height: 1.6; padding: 14px 0;
+    }
+
+    /* SUBTYPE PICKER */
+    .subtype-picker { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+    .subtype-card {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 10px 12px; border: 1px solid var(--border-mid);
+      border-radius: var(--radius); background: var(--bg-input);
+      cursor: pointer; text-align: left; transition: all 0.15s; width: 100%;
+    }
+    .subtype-card:hover { border-color: var(--border-hi); }
+    .subtype-card.selected { background: var(--amber-glow); border-color: rgba(232,160,32,0.4); }
+    .subtype-card-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .subtype-card-title { font-size: 11px; color: var(--text-soft); font-weight: 500; }
+    .subtype-card.selected .subtype-card-title { color: var(--amber); }
+    .subtype-card-test { font-size: 9px; letter-spacing: 0.12em; color: var(--text-dim); text-transform: uppercase; }
+    .subtype-card.selected .subtype-card-test { color: var(--amber-soft); }
+    .subtype-card-desc { font-size: 10px; color: var(--text-muted); line-height: 1.5; }
+
+    /* SAMPLE SIZE WARNING */
+    .size-warning {
+      background: rgba(232,160,32,0.05);
+      border: 1px solid rgba(232,160,32,0.18);
+      border-left: 3px solid var(--amber);
+      padding: 11px 14px; margin-bottom: 16px;
+      border-radius: var(--radius);
+    }
+    .size-warning-label { font-size: 8px; letter-spacing: .22em; text-transform: uppercase; color: var(--amber-soft); margin-bottom: 4px; }
+    .size-warning-item { font-size: 10px; color: var(--text-soft); line-height: 1.7; }
+
+    /* EDITABLE GROUP LABEL CHIPS (upload preview) */
+    .group-label-chip {
+      display:inline-block;
+      padding:3px 9px;
+      background:var(--bg-elevated);
+      border:1px solid var(--border-mid);
+      border-radius:2px;
+      font-size:10px;
+      color:var(--text-soft);
+      cursor:text;
+      outline:none;
+      transition:border-color .15s, color .15s;
+      min-width:36px;
+      letter-spacing:.06em;
+    }
+    .group-label-chip:focus {
+      border-color:var(--amber);
+      color:var(--text);
+    }
+
+    /* RIGHT RESULTS PANEL */
+    .results-panel {
+      overflow-y: auto;
+      padding: 32px 36px;
+      background: var(--bg);
+    }
+    .results-empty {
+      height: 100%; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; color: var(--text-dim);
+    }
+    .results-empty-icon { font-size: 26px; opacity: 0.35; margin-bottom: 4px; }
+    .results-empty-text { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; }
+
+    /* PLAIN ENGLISH SUMMARY */
+    .plain-english {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-mid);
+      border-left: 3px solid rgba(180,200,255,0.25);
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+    .plain-english-label {
+      font-size: 8px; letter-spacing: 0.28em; text-transform: uppercase;
+      color: var(--text-dim); margin-bottom: 8px;
+    }
+    .plain-english-text {
+      font-family: var(--font-serif);
+      font-size: 15px; font-style: italic;
+      color: var(--text-soft); line-height: 1.7;
+    }
+
+    .verdict {
+      position: relative; background: var(--bg-elevated);
+      border: 1px solid var(--border-mid);
+      padding: 18px 20px; margin-bottom: 20px; overflow: hidden;
+    }
+    .verdict::after {
+      content: ''; position: absolute;
+      left: 0; top: 0; bottom: 0; width: 3px;
+    }
+    .verdict.sig::after    { background: var(--teal); }
+    .verdict.notsig::after { background: var(--red); }
+    .verdict.contrary::after { background: #ff8c42; }
+    .verdict.descriptive::after { background: var(--amber); }
+    .verdict-label { font-size: 8px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 7px; }
+    .verdict-headline { font-family: var(--font-serif); font-size: 18px; font-weight: 600; line-height: 1.2; margin-bottom: 6px; }
+    .verdict.sig .verdict-headline    { color: var(--teal); }
+    .verdict.notsig .verdict-headline { color: var(--red); }
+    .verdict.contrary .verdict-headline { color: #ff8c42; }
+    .verdict.descriptive .verdict-headline { color: var(--amber); }
+    .verdict-sub { font-size: 11px; color: var(--text-soft); line-height: 1.6; }
+
+    .pvalue-block { margin-bottom: 20px; }
+    .pvalue-header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .pvalue-eyebrow { font-size: 8px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--text-dim); }
+    .pvalue-number { font-size: 20px; font-weight: 500; color: var(--amber); }
+    .pvalue-track { height: 2px; background: var(--bg-elevated); border-radius: 2px; position: relative; }
+    .pvalue-fill { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+    .pvalue-threshold { position: absolute; top: -4px; bottom: -4px; width: 1px; background: var(--amber); }
+    .pvalue-threshold-label { position: absolute; top: 8px; transform: translateX(-50%); font-size: 8px; color: var(--amber-soft); white-space: nowrap; }
+
+    .stats-section { margin-bottom: 22px; }
+    .section-label { font-size: 8px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--text-dim); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
+    .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--border); }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-key { font-size: 10px; color: var(--text-soft); }
+    .stat-value { font-size: 11px; font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
+    .stat-value.positive { color: var(--teal); }
+    .stat-value.negative { color: var(--red); }
+    .stat-value.array    { color: var(--text-muted); font-size: 10px; }
+
+    .chart-section { margin-top: 8px; }
+    .chart-wrap { margin-top: 12px; }
+    .chart-wrap canvas { max-height: 160px; }
+
+    .spin { display: inline-block; width: 10px; height: 10px; border: 1.5px solid var(--border-mid); border-top-color: var(--amber); border-radius: 50%; animation: spin 0.65s linear infinite; margin-right: 7px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg-elevated); border: 1px solid var(--red); color: var(--text); padding: 10px 14px; font-size: 11px; max-width: 320px; line-height: 1.5; z-index: 200; opacity: 0; transform: translateY(6px); transition: all 0.25s; pointer-events: none; }
+    .toast.show { opacity: 1; transform: none; }
+
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+
+    @media print {
+      header, nav, .wizard-panel, .toast { display: none !important; }
+      .shell { display: block !important; }
+      .results-panel { padding: 24px 32px !important; overflow: visible !important; background: #fff !important; color: #111 !important; }
+      :root { --bg: #fff; --bg-elevated: #f5f5f5; --bg-surface: #fff; --border: #ddd; --border-mid: #ccc; --text: #111; --text-soft: #444; --text-muted: #666; --text-dim: #888; --amber: #b07000; --amber-soft: #b07000; --teal: #007a5e; --red: #cc2233; }
+      .verdict { border: 1px solid #ccc !important; }
+      .verdict::after { display: none; }
+      .pvalue-track { background: #eee !important; }
+      canvas { max-height: 200px !important; }
+      .print-export-btn { display: none !important; }
+      @page { margin: 20mm 16mm; size: A4; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="beacon">
+      <div class="beacon-ring"></div>
+      <div class="beacon-ring"></div>
+      <div class="beacon-core"></div>
+    </div>
+    <div>
+      <div class="logo-name">Lighthouse</div>
+      <span class="logo-sub">Hypothesis Testing Infrastructure</span>
+    </div>
+  </div>
+  <div class="api-status">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">connecting</span>
+  </div>
+</header>
+
+<div class="shell">
+  <div class="wizard-panel" id="wizardPanel">
+    <div id="freeTextContainer"></div>
+  </div>
+
+  <div class="results-panel" id="resultsPanel">
+    <div class="results-empty" id="resultsEmpty">
+      <div class="results-empty-icon">◈</div>
+      <div class="results-empty-text">Awaiting run</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// Same-origin: the Flask app serves both this page and the API, so derive the
+// base from the current location instead of hardcoding a port. This keeps the
+// frontend working no matter which host/port Flask is launched on (and avoids a
+// silent cross-origin failure if it isn't exactly 127.0.0.1:5000).
+const API = window.location.origin;
+let chartInst        = null;
+let lastResult       = null;   // stored for JSON export
+let _selectAutoOpened = false; // tracks whether the type-select was auto-expanded by failed inference
+let ftSubtype        = null;  // sub-type for causal_adjacent and distributional
+
+/* ── SIGNIFICANCE LEVEL ─────────────────────────────────────── */
+let alpha = 0.05;
+
+const SIG_LEVELS = [
+  { value: 0.10, label: 'Exploratory', desc: '1 in 10 chance the result is a fluke. Good for early-stage exploration when you want to cast a wide net.' },
+  { value: 0.05, label: 'Standard',    desc: '1 in 20 chance the result is a fluke. The most common threshold used in business analytics.' },
+  { value: 0.01, label: 'Rigorous',    desc: '1 in 100 chance the result is a fluke. Use when the decision carries significant cost or risk.' },
+];
+
+function setAlpha(a) {
+  alpha = a;
+  document.querySelectorAll('.sig-chip').forEach(el => {
+    el.classList.toggle('selected', parseFloat(el.dataset.alpha) === a);
+  });
+}
+
+function significanceHTML() {
+  return `
+    <div class="sig-section">
+      <div class="sig-section-title">Significance Level</div>
+      <div class="sig-help">How much evidence do you need before calling a result real? A lower threshold means you require stronger evidence — fewer false alarms, but also easier to miss a real effect.</div>
+      <div class="sig-options">
+        ${SIG_LEVELS.map(s => `
+          <button class="sig-chip ${s.value === alpha ? 'selected' : ''}"
+                  data-alpha="${s.value}"
+                  onclick="setAlpha(${s.value})">
+            <div class="sig-chip-header">
+              <span class="sig-chip-value">α = ${s.value}</span>
+              <span class="sig-chip-label">${s.label}</span>
+            </div>
+            <div class="sig-chip-desc">${s.desc}</div>
+          </button>`).join('')}
+      </div>
+    </div>`;
+}
+
+/* ── FILE DATA STATE ─────────────────────────────────────────── */
+let ftFileData  = null;  // parsed data ready for the API
+let ftDataMode  = 'upload';
+let currentClaimType = '';
+
+/* ── INFERENCE ───────────────────────────────────────────────── */
+function inferClaimType(text) {
+  const t = text.toLowerCase();
+  const scores = { directional: 0, comparative: 0, causal_adjacent: 0, distributional: 0 };
+
+  // ── CAUSAL FRAMING GUARD ──────────────────────────────────────
+  // Detect whether the sentence is framed causally BEFORE scoring
+  // directional keywords. Outcome-change verbs ("increased", "grew",
+  // "rose") describe the effect of an intervention, not a time-series
+  // trend — they must not inflate the directional score in that context.
+  const CAUSAL_TRIGGERS = [
+    /\bafter\s+(the\s+)?(launch|campaign|rollout|release|policy|intervention|treatment|boost|change|update|push|announcement|experiment|pilot|promotion|initiative|programme|program)\b/,
+    /\bsince\s+(the\s+)?(launch|campaign|rollout|release|policy|intervention|treatment|boost|change|update|push|announcement|experiment|pilot|promotion|initiative|programme|program)\b/,
+    /\bfollowing\s+(the\s+)?(launch|campaign|rollout|release|policy|intervention|treatment|boost|change|update|push|announcement|experiment)\b/,
+    /\b(launch(ed|ing)?|roll(ed|ing)?\s*out|campaign|boost(ed|ing)?|intervention|treatment|experiment)\b.*\b(increas|decreas|grew|grow|rose|rise|fell|fall|drop|climb|jump)/,
+    /\b(increas|decreas|grew|grow|rose|rise|fell|fall|drop|climb|jump).*\b(after|since|following|because of|due to|as a result of)\b/,
+    /\bafter\s+\w+(ing|ed)\b/,          // "after boosting", "after launching"
+    /\bbecause of\b|\bdue to\b|\bas a result of\b|\bthanks to\b/,
+    /\b(step change|level shift|regime change|structural break|change.?point)\b/,
+    /\bbefore.{1,80}after\b|\bafter.{1,80}before\b/,
+  ];
+  const hasCausalFrame = CAUSAL_TRIGGERS.some(re => re.test(t));
+
+  // ── DIRECTIONAL ──────────────────────────────────────────────
+  // Only score outcome-change verbs when there is NO causal framing.
+  if (/\btrend\b/.test(t))                                            scores.directional += 3;
+  if (/over time|time series/.test(t))                                scores.directional += 3;
+  if (/over (the )?(past|last) \d+|(the )?(past|last) (few )?\d+/.test(t)) scores.directional += 3;
+  if (/(these|the) (last|past|most recent) (few )?\w+ (years?|months?|weeks?|quarters?|days?)/.test(t)) scores.directional += 3;
+  if (/(most recent|latest) \d+ (years?|months?|weeks?|quarters?|days?)/.test(t)) scores.directional += 3;
+  if (/month|week|quarter|year|daily|weekly|monthly|\bdays?\b/.test(t)) scores.directional += 1;
+  if (/\bslope\b|\bdrift\b/.test(t))                                  scores.directional += 2;
+
+  // Outcome-change verbs: only count toward directional if there is no causal frame
+  if (!hasCausalFrame) {
+    if (/has been (increasing|decreasing|growing|rising|falling|declining)/.test(t)) scores.directional += 4;
+    if (/growing|rising|falling|declining/.test(t))                   scores.directional += 2;
+    if (/increas|decreas/.test(t))                                    scores.directional += 1;
+  }
+
+  // ── COMPARATIVE ──────────────────────────────────────────────
+  if (/\bcompar/.test(t))                                             scores.comparative += 3;
+  if (/\bversus\b|\bvs\.?\b/.test(t))                                scores.comparative += 3;
+  if (/differ(s|ed|ence)? (between|from|across|among|in|by|across)/.test(t)) scores.comparative += 5;
+  if (/is (higher|lower|greater|less|more|fewer) than/.test(t))      scores.comparative += 5;
+  if (/higher than|lower than|more than|less than/.test(t))          scores.comparative += 3;
+  if (/\b(higher|lower|greater|less|more|fewer)\b.{0,50}\bthan\b/.test(t)) scores.comparative += 3;
+  if (/outperform|underperform/.test(t))                              scores.comparative += 4;
+  if (/\bgroup(s)?\b/.test(t))                                       scores.comparative += 2;
+  if (/\bregion(s)?\b|\bmarket(s)?\b|\bcohort(s)?\b|\bcountri(es|y)\b|\bcit(ies|y)\b|\bchannel(s)?\b|\bteam(s)?\b/.test(t)) scores.comparative += 2;
+  if (/\bbetween\b.{1,60}\band\b/.test(t))                           scores.comparative += 2;
+  if (/same as|equal to/.test(t))                                    scores.comparative += 3;
+  if (/segment(s)? (differ|compar|vs)|between .* segment/.test(t))   scores.comparative += 3;
+
+  // ── CAUSAL ───────────────────────────────────────────────────
+  if (hasCausalFrame)                                                  scores.causal_adjacent += 5;
+  if (/intervention|before.*after|after.*before/.test(t))             scores.causal_adjacent += 4;
+  if (/change.?point|structural break/.test(t))                       scores.causal_adjacent += 4;
+  if (/new pattern|pattern (has |have )?(changed|shifted|emerged)|different pattern/.test(t)) scores.causal_adjacent += 3;
+  if (/\bshift(ed|ing)?\b/.test(t))                                   scores.causal_adjacent += 2;
+  if (/\bcause[sd]?\b|\bcausal\b/.test(t))                            scores.causal_adjacent += 3;
+  if (/launch(ed|ing)?|campaign|rollout|roll(ed|ing)\s*out|release|policy|treatment|experiment/.test(t)) scores.causal_adjacent += 3;
+  if (/boost(ed|ing)?|promot(ed|ing|ion)|advertis(ed|ing|ement)/.test(t)) scores.causal_adjacent += 3;
+  if (/effect of|impact of|due to/.test(t))                           scores.causal_adjacent += 3;
+  if (/after the|since the|following the/.test(t))                    scores.causal_adjacent += 3;
+  if (/step change|level (shift|change)|regime change/.test(t))       scores.causal_adjacent += 4;
+
+  // ── DISTRIBUTIONAL ───────────────────────────────────────────
+  if (/\banomal|\boutlier|\bz.score/.test(t))                        scores.distributional += 4;
+  if (/unusual|unexpected|abnormal/.test(t))                         scores.distributional += 3;
+  if (/spike|sudden drop|sudden (increase|rise|fall)/.test(t))       scores.distributional += 3;
+  if (/distribut/.test(t))                                           scores.distributional += 3;
+  if (/historical (mean|average|baseline)/.test(t))                  scores.distributional += 3;
+  if (/deviation|baseline/.test(t))                                  scores.distributional += 2;
+  if (/chi.?square/.test(t))                                         scores.distributional += 5;
+  if (/categor(y|ies|ical)/.test(t))                                 scores.distributional += 3;
+  if (/frequenc(y|ies)/.test(t))                                     scores.distributional += 3;
+  if (/\bbreakdown\b|\bcomposition\b/.test(t))                       scores.distributional += 3;
+  if (/proportion(s)?/.test(t))                                      scores.distributional += 2;
+  if (/\bcounts?\b/.test(t))                                         scores.distributional += 2;
+
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const [topKey, topScore] = ranked[0];
+  const [, secondScore]    = ranked[1];
+  if (topScore === 0 || topScore === secondScore) return { type: '', confident: false };
+  // Raised gap threshold: require a clearer margin before calling it confident
+  return { type: topKey, confident: (topScore - secondScore) >= 4 };
+}
+
+// Directional MODE: does the user want to *quantify* the trend (a slope / rate /
+// forecast → Linear Regression) rather than just detect whether one exists
+// (→ Mann–Kendall)? Conservative: only flags explicit quantification language.
+function inferSlopeIntent(text) {
+  const t = text.toLowerCase();
+  return /\bslope\b/.test(t)
+      || /\brate of (change|increase|decrease|growth|decline)\b/.test(t)
+      || /\bgrowth rate\b/.test(t)
+      || /\bhow (fast|quickly|much|steep)\b/.test(t)
+      || /\bby how much\b/.test(t)
+      || /\bper (month|week|year|quarter|day|unit)\b/.test(t)
+      || /\bunits? per\b/.test(t)
+      || /\bmagnitude of\b/.test(t)
+      || /\bforecast|\bpredict|\bregression\b|\btrend line\b/.test(t);
+}
+
+function inferDirection(text) {
+  const t = text.toLowerCase();
+  if (/\b(increas|grow|rise|rising|upward|higher|more)\w*\b/.test(t)) return 'increasing';
+  if (/\b(decreas|declin|fall|falling|drop|lower|less|downward)\w*\b/.test(t)) return 'decreasing';
+  return null;
+}
+
+// Direction for comparative hypotheses: is group A expected higher or lower than group B?
+// "higher/greater/more/above" → a_higher; "lower/less/fewer/below" → a_lower; else null
+function inferComparisonDirection(text) {
+  const t = text.toLowerCase();
+  if (/\b(higher|greater|more|above|larger|bigger|outperforms?) than\b/.test(t)) return 'a_higher';
+  if (/\b(lower|less|fewer|below|smaller|underperforms?) than\b/.test(t))        return 'a_lower';
+  return null;  // undirected: just testing for any difference
+}
+
+// Derive the actual direction found in the data from the result stats and raw data
+function getActualDirection(claimType, testId, result, raw) {
+  if (claimType === 'directional') {
+    const tau   = result.tau   ?? result.kendall_tau;
+    const slope = result.slope ?? result.b1;
+    if (tau   !== undefined) return tau   > 0 ? 'increasing' : tau   < 0 ? 'decreasing' : null;
+    if (slope !== undefined) return slope > 0 ? 'increasing' : slope < 0 ? 'decreasing' : null;
+  }
+  if (claimType === 'comparative') {
+    const ga = raw.group_a, gb = raw.group_b;
+    if (ga?.length && gb?.length) {
+      const ma = ga.reduce((a, b) => a + b, 0) / ga.length;
+      const mb = gb.reduce((a, b) => a + b, 0) / gb.length;
+      return ma > mb ? 'a_higher' : ma < mb ? 'a_lower' : 'equal';
+    }
+  }
+  return null;
+}
+
+// Return [labelA, labelB] for the first two groups, using file-upload labels when available
+function getGroupLabels(raw) {
+  const labels = raw._groupLabels;
+  const a = labels?.[0] ?? 'Group A';
+  const b = labels?.[1] ?? 'Group B';
+  return [a, b];
+}
+
+const CLAIM_LABELS = {
+  directional:     'Trend over time',
+  comparative:     'Group comparison',
+  causal_adjacent: 'Intervention / causal effect',
+  distributional:  'Anomaly / distribution check',
+};
+
+/* ── FREE TEXT RENDER ────────────────────────────────────────── */
+function renderFreeText() {
+  document.getElementById('freeTextContainer').innerHTML = `
+    <div style="font-size:8px;letter-spacing:.3em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">New Analysis</div>
+    <div style="font-family:var(--font-serif);font-size:20px;font-style:italic;color:var(--text);line-height:1.2;margin-bottom:24px;">State your hypothesis</div>
+    <div class="field-group">
+      <div class="field-label">Your hypothesis</div>
+      <textarea id="ft-hyp" rows="3"
+        placeholder="e.g. The churn rate has been increasing over the last 24 months"
+        oninput="onFTHypInput(this.value)"></textarea>
+      <div id="ft-badge" style="margin-top:6px;min-height:20px;"></div>
+      <div id="ft-override-row" class="ft-override-row">
+        <span id="ft-override-link" class="ft-override-link" onclick="toggleOverride()">Select analysis type manually →</span>
+      </div>
+      <div id="ft-override-select" class="ft-override-select" style="display:none;">
+        <div style="font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">Select analysis type</div>
+        <select onchange="overrideClaimType(this.value)">
+          <option value="">— choose manually —</option>
+          <option value="directional">Trend over time</option>
+          <option value="comparative">Group comparison</option>
+          <option value="causal_adjacent">Intervention / causal effect</option>
+          <option value="distributional">Anomaly / distribution check</option>
+        </select>
+      </div>
+    </div>
+    <div id="ft-data-fields"></div>`;
+}
+
+function onFTHypInput(text) {
+  const { type: inferred, confident } = inferClaimType(text);
+  const badge     = document.getElementById('ft-badge');
+  const overSel   = document.getElementById('ft-override-select');
+  const overLink  = document.getElementById('ft-override-link');
+
+  if (inferred) {
+    // ── Inference succeeded ────────────────────────────────────
+    const cls  = confident ? 'ft-infer-badge' : 'ft-infer-badge uncertain';
+    const icon = confident ? '◈' : '◈~';
+    const note = confident ? '' : ' <span style="opacity:.7">(best match)</span>';
+    badge.innerHTML = `<span class="${cls}">${icon} Analysis type: ${CLAIM_LABELS[inferred]}${note}</span>`;
+    if (overLink) overLink.textContent = 'Not right? Override →';
+    // Close the select only if it was auto-opened by failed inference — respect manual opens
+    if (_selectAutoOpened && overSel) {
+      overSel.style.display = 'none';
+      overSel.querySelector('select').value = '';
+      _selectAutoOpened = false;
+    }
+    if (inferred !== currentClaimType) {
+      currentClaimType = inferred;
+      ftFileData = null;
+      ftSubtype = null;
+      renderFTDataFields(inferred);
+    }
+  } else {
+    // ── Inference failed ──────────────────────────────────────
+    badge.innerHTML = '';
+    if (overLink) overLink.textContent = 'Select analysis type manually →';
+    if (currentClaimType) {
+      currentClaimType = '';
+      ftFileData = null;
+      ftSubtype = null;
+      document.getElementById('ft-data-fields').innerHTML = '';
+    }
+    // Auto-expand the select when the user has written a substantial hypothesis
+    // but Lighthouse couldn't classify it — give them an immediate escape hatch
+    if (text.trim().length > 8 && overSel && overSel.style.display === 'none') {
+      overSel.style.display = '';
+      _selectAutoOpened = true;
+    }
+  }
+}
+
+function toggleOverride() {
+  const el = document.getElementById('ft-override-select');
+  if (!el) return;
+  const opening = el.style.display === 'none';
+  el.style.display = opening ? '' : 'none';
+  // Once the user explicitly opens/closes it, it's no longer auto-controlled
+  if (opening) _selectAutoOpened = false;
+}
+
+function overrideClaimType(val) {
+  if (!val) return;
+  currentClaimType = val;
+  ftFileData = null;
+  // Clear any stale upload preview from the previous type
+  const prev = document.getElementById('uploadPreview');
+  if (prev) prev.innerHTML = '';
+  // Update badge to reflect override
+  const badge = document.getElementById('ft-badge');
+  if (badge) badge.innerHTML = `<span class="ft-infer-badge" style="border-color:rgba(100,150,255,0.25);background:rgba(100,150,255,0.05);color:#7eb3ff;">✎ Overridden: ${CLAIM_LABELS[val]}</span>`;
+  document.getElementById('ft-override-select').style.display = 'none';
+  renderFTDataFields(val);
+}
+
+/* ── DATA INPUT SECTIONS ─────────────────────────────────────── */
+const UPLOAD_INSTRUCTIONS = {
+  directional:    'Upload a CSV or Excel file with <strong>one column</strong> of numeric values measured over time (e.g. monthly revenue, weekly churn rate).',
+  comparative:    'Upload a CSV or Excel file where <strong>each column is one group</strong> you want to compare, or a two-column file with a category column and a value column.',
+  causal_series:  'Upload a CSV or Excel file with <strong>one column</strong> of values measured over time, ordered from earliest to latest.',
+  causal_adjacent:'Upload a CSV or Excel file with <strong>one column</strong> of values measured over time, ordered from earliest to latest.',
+  causal_did:     'Upload a CSV or Excel file with <strong>four numeric columns</strong>: treatment_before, treatment_after, control_before, control_after. Each column holds the measurements for that group.',
+  z_test:         'Upload a CSV or Excel file with <strong>one column of historical values</strong> (your normal baseline data). Lighthouse will compute the mean and spread automatically.',
+  distributional: 'Upload a CSV or Excel file with <strong>one column of historical values</strong> (your normal baseline data). Lighthouse will compute the mean and spread automatically.',
+  chi_square:     'Upload a CSV or Excel file with <strong>category counts</strong>. Use a two-column file (category name + observed count) or a single column of counts. Add a second count column to supply expected values.',
+  ks_test:        'Upload a CSV or Excel file with <strong>two numeric columns</strong>: one per sample. Column headers become sample labels.',
+};
+
+function renderUploadZone(effType) {
+  const instr = UPLOAD_INSTRUCTIONS[effType] || UPLOAD_INSTRUCTIONS[currentClaimType] || '';
+  return `
+    <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">${instr}</div>
+    <div class="upload-zone" id="uploadZone"
+         ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <input type="file" id="fileInput" accept=".csv,.xls,.xlsx"
+             onchange="handleFileSelect(this.files[0])">
+      <div class="upload-icon">↑</div>
+      <div class="upload-text">Drop your file here, or <strong>click to browse</strong></div>
+      <div class="upload-hint">Accepts CSV, XLS, and XLSX</div>
+    </div>
+    <div style="font-size:9px;color:var(--text-muted);line-height:1.6;margin:6px 2px 0;">
+      ⚠ Use plain numbers without thousands separators — write <strong style="color:var(--text-soft);">1000</strong>, not <strong style="color:var(--text-soft);">1,000</strong> (a comma is read as a new column).
+    </div>
+    <div id="uploadPreview"></div>`;
+}
+
+function renderManualFields(effType) {
+  if (effType === 'directional') {
+    return `
+      <div class="field-group">
+        <div class="field-label">Time series data</div>
+        <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:6px;">Enter your values separated by commas, in time order (oldest first).</div>
+        <textarea id="ft_series" rows="3" placeholder="e.g. 0.050, 0.055, 0.062, 0.069, 0.073, 0.080 …"></textarea>
+      </div>
+      <div class="btn-row" style="padding-top:0;margin-bottom:14px;">
+        <button class="btn btn-sample" onclick="loadFTSample()">Load sample data</button>
+      </div>`;
+  }
+  if (effType === 'comparative') {
+    return `
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter the values for each group, separated by commas. Add more groups if needed.</div>
+      <div id="ft-group-container">
+        <div class="field-group">
+          <div class="field-label">
+            <span class="group-label-text" ondblclick="editGroupLabel(this)" title="Double-click to rename">Group A</span>
+          </div>
+          <textarea id="ft_group_a" rows="2" placeholder="e.g. 115, 122, 118, 131, 108"></textarea>
+        </div>
+        <div class="field-group">
+          <div class="field-label">
+            <span class="group-label-text" ondblclick="editGroupLabel(this)" title="Double-click to rename">Group B</span>
+          </div>
+          <textarea id="ft_group_b" rows="2" placeholder="e.g. 98, 103, 95, 107, 99"></textarea>
+        </div>
+      </div>
+      <div class="btn-row" style="padding-top:0;margin-bottom:14px;">
+        <button class="btn btn-sample" onclick="addFTGroup()">+ Add group</button>
+        <button class="btn btn-sample" onclick="loadFTSample()">Load sample data</button>
+      </div>`;
+  }
+  if (effType === 'causal_series' || effType === 'causal_adjacent') {
+    return `
+      <div class="field-group">
+        <div class="field-label">Time series data</div>
+        <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:6px;">Enter your values separated by commas, in time order (oldest first).</div>
+        <textarea id="ft_series" rows="3" placeholder="e.g. 50000, 51000, 49000, 52000, 63000, 64000 …"></textarea>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Intervention point <span class="field-optional">(optional)</span></div>
+        <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:6px;">Position in your list where the intervention happened (0-indexed). Leave blank to auto-detect.</div>
+        <input type="number" step="1" id="ft_intervention_index" placeholder="e.g. 10">
+      </div>
+      <div class="btn-row" style="padding-top:0;margin-bottom:14px;">
+        <button class="btn btn-sample" onclick="loadFTSample()">Load sample data</button>
+      </div>`;
+  }
+  if (effType === 'causal_did') {
+    return `
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter the measurements for each of the four DiD groups, separated by commas.</div>
+      <div class="field-group">
+        <div class="field-label">Treatment — Before</div>
+        <textarea id="ft_treatment_before" rows="2" placeholder="e.g. 50000, 51000, 49000, 52000, 48000"></textarea>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Treatment — After</div>
+        <textarea id="ft_treatment_after" rows="2" placeholder="e.g. 63000, 64000, 62500, 65000, 61000"></textarea>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Control — Before</div>
+        <textarea id="ft_control_before" rows="2" placeholder="e.g. 45000, 46000, 44000, 47000, 43000"></textarea>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Control — After</div>
+        <textarea id="ft_control_after" rows="2" placeholder="e.g. 45500, 46200, 44800, 47500, 43500"></textarea>
+      </div>
+      <div class="btn-row" style="padding-top:0;margin-bottom:14px;">
+        <button class="btn btn-sample" onclick="loadFTSample()">Load sample data</button>
+      </div>`;
+  }
+  if (effType === 'z_test' || effType === 'distributional') {
+    return `
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter your historical baseline values — Lighthouse will compute the mean and typical spread automatically. Then provide the single current value you want to test.</div>
+      <div class="field-group">
+        <div class="field-label">Historical values</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">Past measurements that represent normal behaviour, separated by commas.</div>
+        <textarea id="ft_historical_values" rows="3" placeholder="e.g. 0.078, 0.082, 0.079, 0.081, 0.080, 0.083 …"></textarea>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Current value to test</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">The single latest measurement you want to check against the baseline.</div>
+        <input type="number" step="any" id="ft_current_value" placeholder="e.g. 0.042">
+      </div>
+      <div class="btn-row" style="padding-top:0;margin-bottom:14px;">
+        <button class="btn btn-sample" onclick="loadFTSample()">Load sample data</button>
+      </div>`;
+  }
+  if (effType === 'chi_square') {
+    return `
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter the observed count for each category. Optionally supply expected counts — if blank, Lighthouse assumes equal proportions.</div>
+      <div class="field-group">
+        <div class="field-label">Observed counts</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">One count per category, comma-separated.</div>
+        <textarea id="ft_observed" rows="2" placeholder="e.g. 45, 30, 15, 10"></textarea>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Expected counts <span class="field-optional">(optional)</span></div>
+        <textarea id="ft_expected" rows="2" placeholder="e.g. 25, 25, 25, 25"></textarea>
+      </div>
+      <div class="btn-row" style="padding-top:0;margin-bottom:14px;">
+        <button class="btn btn-sample" onclick="loadFTSample()">Load sample data</button>
+      </div>`;
+  }
+  if (effType === 'ks_test') {
+    return `
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter the values for each sample, separated by commas.</div>
+      <div class="field-group">
+        <div class="field-label">Sample A</div>
+        <textarea id="ft_sample_a" rows="2" placeholder="e.g. 2.1, 2.3, 2.0, 2.4, 2.2, 2.5, 2.1, 2.3"></textarea>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Sample B</div>
+        <textarea id="ft_sample_b" rows="2" placeholder="e.g. 3.1, 3.5, 3.2, 2.9, 3.4, 3.6, 3.0, 3.3"></textarea>
+      </div>
+      <div class="btn-row" style="padding-top:0;margin-bottom:14px;">
+        <button class="btn btn-sample" onclick="loadFTSample()">Load sample data</button>
+      </div>`;
+  }
+  return '';
+}
+
+// ── SUBTYPE HELPERS ────────────────────────────────────────────
+function effectiveInputType() {
+  if (currentClaimType === 'causal_adjacent') return ftSubtype === 'did' ? 'causal_did' : 'causal_series';
+  if (currentClaimType === 'distributional')  return ftSubtype || 'z_test';
+  return currentClaimType;
+}
+
+function renderSubtypePicker(claimType) {
+  const cards = claimType === 'causal_adjacent' ? [
+    { id: 'series', title: 'Single Time Series',    tests: 'ITS · Change Point', desc: 'You have one continuous series of measurements. Lighthouse will detect whether and when a structural change occurred.' },
+    { id: 'did',    title: 'Treatment vs Control',  tests: 'Diff-in-Differences', desc: 'You ran an experiment with a treatment group and a control group, both measured before and after an intervention.' },
+  ] : [
+    { id: 'z_test',     title: 'Anomaly Check',     tests: 'Z-Test',       desc: 'Is a single recent value unusually far from historical norms? Requires a baseline history and one current value.' },
+    { id: 'chi_square', title: 'Category Counts',   tests: 'Chi-Square',   desc: 'Do observed frequencies of categories match expected proportions? Requires counts per category.' },
+    { id: 'ks_test',    title: 'Two Distributions', tests: 'KS Test',      desc: 'Do two groups of measurements follow the same underlying distribution?' },
+  ];
+  return `<div class="subtype-picker">
+    ${cards.map(c => `
+      <button class="subtype-card" data-subtype="${c.id}" onclick="selectSubtype('${c.id}')">
+        <div class="subtype-card-header">
+          <span class="subtype-card-title">${c.title}</span>
+          <span class="subtype-card-test">${c.tests}</span>
+        </div>
+        <div class="subtype-card-desc">${c.desc}</div>
+      </button>`).join('')}
+  </div>`;
+}
+
+function selectSubtype(subtype) {
+  ftSubtype  = subtype;
+  ftFileData = null;
+  ftDataMode = 'upload';
+  document.querySelectorAll('.subtype-card').forEach(el =>
+    el.classList.toggle('selected', el.dataset.subtype === subtype)
+  );
+  document.getElementById('ft-subtype-data').innerHTML = buildDataSection(effectiveInputType());
+}
+
+function buildDataSection(effType) {
+  const distCurrentInput = (effType === 'z_test' || effType === 'distributional') ? `
+    <div class="field-group" style="margin-top:8px;">
+      <div class="field-label">Current value to test</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">The single latest measurement to check against the uploaded baseline.</div>
+      <input type="number" step="any" id="ft_current_value" placeholder="e.g. 0.042">
+    </div>` : '';
+  const causalIntInput = (effType === 'causal_series' || effType === 'causal_adjacent') ? `
+    <div class="field-group" style="margin-top:8px;">
+      <div class="field-label">Intervention point <span class="field-optional">(optional)</span></div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">Position in the series where the intervention happened (0-indexed). Leave blank to auto-detect.</div>
+      <input type="number" step="1" id="ft_intervention_index" placeholder="e.g. 10">
+    </div>` : '';
+  return `
+    <div class="data-divider">Data</div>
+    <div class="data-mode-toggle">
+      <button class="data-mode-btn active" id="dmUpload" onclick="setDataMode('upload')">Upload File</button>
+      <button class="data-mode-btn"        id="dmManual" onclick="setDataMode('manual')">Enter Manually</button>
+    </div>
+    <div id="upload-section">${renderUploadZone(effType)}${distCurrentInput}${causalIntInput}</div>
+    <div id="manual-section" style="display:none">${renderManualFields(effType)}</div>
+    <div class="data-divider" style="margin-top:10px;">Significance</div>
+    ${significanceHTML()}
+    <div class="btn-row">
+      <button class="btn btn-run" id="ftRunBtn" onclick="runFreeText()">Run ▶</button>
+      <button class="btn btn-reset" onclick="clearFreeText()">Clear</button>
+    </div>`;
+}
+
+function renderFTDataFields(claimType) {
+  const container = document.getElementById('ft-data-fields');
+  if (!claimType) { container.innerHTML = ''; return; }
+  ftFileData = null;
+  ftDataMode = 'upload';
+  ftSubtype  = null;
+  _ftGroupCount = 2;
+
+  const needsSubtype = claimType === 'distributional' || claimType === 'causal_adjacent';
+  if (needsSubtype) {
+    container.innerHTML = `
+      <div class="data-divider">Analysis Approach</div>
+      ${renderSubtypePicker(claimType)}
+      <div id="ft-subtype-data">
+        <div class="ft-pending-hint" style="text-align:center;padding:16px 0 8px;">Select an approach above to continue.</div>
+      </div>`;
+  } else {
+    container.innerHTML = buildDataSection(claimType);
+  }
+}
+
+function setDataMode(mode) {
+  ftDataMode = mode;
+  ftFileData = null;
+  document.getElementById('dmUpload')?.classList.toggle('active', mode === 'upload');
+  document.getElementById('dmManual')?.classList.toggle('active', mode === 'manual');
+  const up = document.getElementById('upload-section');
+  const mn = document.getElementById('manual-section');
+  if (up) up.style.display = mode === 'upload' ? '' : 'none';
+  if (mn) mn.style.display = mode === 'manual' ? '' : 'none';
+}
+
+/* ── FILE HANDLING ───────────────────────────────────────────── */
+function onDragOver(e) { e.preventDefault(); document.getElementById('uploadZone')?.classList.add('dragover'); }
+function onDragLeave()  { document.getElementById('uploadZone')?.classList.remove('dragover'); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone')?.classList.remove('dragover');
+  const file = e.dataTransfer?.files?.[0];
+  if (file) handleFileSelect(file);
+}
+
+function handleFileSelect(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const reader = new FileReader();
+
+  if (ext === 'csv') {
+    reader.onload = e => parseAndStoreFile(e.target.result, 'csv', file.name);
+    reader.readAsText(file);
+  } else if (ext === 'xls' || ext === 'xlsx') {
+    reader.onload = e => {
+      try {
+        const wb   = XLSX.read(e.target.result, { type: 'array' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const csv  = XLSX.utils.sheet_to_csv(ws);
+        parseAndStoreFile(csv, 'csv', file.name);
+      } catch {
+        showUploadError('Could not read Excel file. Try saving as CSV first.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    showUploadError('Please upload a CSV or Excel (.xlsx/.xls) file.');
+  }
+}
+
+/* ── COLUMN TYPE CLASSIFIER ──────────────────────────────────────────────────
+   Returns 'numeric' | 'date' | 'categorical' | 'empty' for a column's values.
+   A column is numeric if ≥ 80% of non-empty cells parse as finite numbers.
+   A column is date-like if ≥ 80% of non-empty cells look like ISO / common
+   date strings — these should never be treated as data values.             */
+const _DATE_RE = /^\d{4}[-/]\d{1,2}([-/]\d{1,2})?|^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/;
+
+function classifyColumn(values) {
+  const nonEmpty = values.filter(v => v !== '' && v != null);
+  if (!nonEmpty.length) return 'empty';
+  const threshold = v => nonEmpty.filter(v).length / nonEmpty.length >= 0.8;
+  if (threshold(v => _DATE_RE.test(v)))                        return 'date';
+  if (threshold(v => !isNaN(parseFloat(v)) && isFinite(v)))   return 'numeric';
+  return 'categorical';
+}
+
+/* Extract the values of column ci from all data rows as numbers. */
+function numericCol(dataRows, ci) {
+  return dataRows.map(r => parseFloat(r[ci])).filter(v => !isNaN(v));
+}
+
+function parseAndStoreFile(csvText, _fmt, fileName) {
+  const parsed = Papa.parse(csvText, { header: false, skipEmptyLines: true, dynamicTyping: false });
+  if (parsed.errors.length && !parsed.data.length) {
+    showUploadError('Could not parse file. Make sure it is a valid CSV or Excel file.');
+    return;
+  }
+
+  const rows = parsed.data.map(r => r.map(c => (typeof c === 'string' ? c.trim() : String(c))));
+  if (rows.length < 2) { showUploadError('File appears to be empty or has only one row.'); return; }
+
+  // Detect header row: if any cell in row 0 is non-numeric treat it as a header
+  const firstRow  = rows[0];
+  const hasHeader = firstRow.some(c => isNaN(parseFloat(c)));
+  const headers   = hasHeader ? firstRow : firstRow.map((_, i) => `Column ${i + 1}`);
+  const dataRows  = hasHeader ? rows.slice(1) : rows;
+  const numCols   = headers.length;
+
+  // Classify every column
+  const colTypes = headers.map((_, ci) => classifyColumn(dataRows.map(r => r[ci] ?? '')));
+
+  const effType = effectiveInputType();
+
+  // ── DIRECTIONAL / CAUSAL SERIES ─────────────────────────────────────────
+  if (effType === 'directional' || effType === 'causal_series' || effType === 'causal_adjacent') {
+    // Use the first numeric (non-date) column as the time series
+    const colIdx = colTypes.findIndex(t => t === 'numeric');
+    if (colIdx < 0) {
+      showUploadError('No numeric column found. Make sure the file has a column of numbers.');
+      return;
+    }
+    const series = numericCol(dataRows, colIdx);
+    if (series.length < 3) {
+      showUploadError(`Only ${series.length} numeric value(s) found in "${headers[colIdx]}". Need at least 3.`);
+      return;
+    }
+    ftFileData = { type: 'series', series };
+    const dateCol = colTypes.findIndex(t => t === 'date');
+    const dateNote = dateCol >= 0 ? ` — dates ignored, values taken from "${headers[colIdx]}"` : ` from "${headers[colIdx]}"`;
+    showUploadPreview(`✓ Loaded "${fileName}" — ${series.length} data points${dateNote}`);
+
+  // ── COMPARATIVE ─────────────────────────────────────────────────────────
+  } else if (currentClaimType === 'comparative') {
+
+    // Shape A — LONG FORMAT: one categorical column + one numeric column
+    // e.g.  segment, avg_order_value
+    //       Northeast, 111.8
+    //       Northeast, 121.6
+    //       Southwest, 98.3
+    const catIndices = colTypes.map((t, i) => t === 'categorical' ? i : -1).filter(i => i >= 0);
+    const numIndices = colTypes.map((t, i) => t === 'numeric'     ? i : -1).filter(i => i >= 0);
+
+    if (catIndices.length === 1 && numIndices.length === 1) {
+      const catIdx = catIndices[0], valIdx = numIndices[0];
+      const groupMap = {};
+      for (const row of dataRows) {
+        const label = row[catIdx];
+        const val   = parseFloat(row[valIdx]);
+        if (label && !isNaN(val)) {
+          if (!groupMap[label]) groupMap[label] = [];
+          groupMap[label].push(val);
+        }
+      }
+      const groupLabels = Object.keys(groupMap);
+      const groups      = groupLabels.map(l => groupMap[l]);
+      if (groupLabels.length < 2) {
+        showUploadError(`Only ${groupLabels.length} category found in "${headers[catIdx]}". Need at least 2 groups.`);
+        return;
+      }
+      ftFileData = { type: 'groups', groups, groupLabels };
+      showUploadPreviewWithLabels(fileName, groupLabels, groups);
+
+    } else {
+      // Shape B — WIDE FORMAT: each numeric column is one group
+      // e.g.  Northeast, Southwest, Midwest
+      //       111.8, 98.3, 130.1
+      const groups      = numIndices.map(ci => numericCol(dataRows, ci));
+      const groupLabels = numIndices.map(ci => headers[ci]);
+      const nonEmpty    = groups.map((g, i) => ({ g, l: groupLabels[i] })).filter(x => x.g.length > 0);
+      if (nonEmpty.length < 2) {
+        showUploadError(
+          `Found only ${nonEmpty.length} numeric column(s). ` +
+          `For group comparisons upload either a wide file (one column per group) ` +
+          `or a long file with a category column and a value column.`
+        );
+        return;
+      }
+      ftFileData = { type: 'groups', groups: nonEmpty.map(x => x.g), groupLabels: nonEmpty.map(x => x.l) };
+      showUploadPreviewWithLabels(fileName, nonEmpty.map(x => x.l), nonEmpty.map(x => x.g));
+    }
+
+  // ── CAUSAL DID ──────────────────────────────────────────────────────────
+  } else if (effType === 'causal_did') {
+    const numIndices = colTypes.map((t, i) => t === 'numeric' ? i : -1).filter(i => i >= 0);
+    if (numIndices.length < 4) {
+      showUploadError(`Need 4 numeric columns (treatment_before, treatment_after, control_before, control_after). Found only ${numIndices.length}.`);
+      return;
+    }
+    const [tb, ta, cb, ca] = numIndices.slice(0, 4).map(ci => numericCol(dataRows, ci));
+    ftFileData = { type: 'causal_did', treatment_before: tb, treatment_after: ta, control_before: cb, control_after: ca };
+    showUploadPreview(
+      `✓ Loaded "${fileName}" — DiD: treatment before (${tb.length}pts) · after (${ta.length}pts) · control before (${cb.length}pts) · after (${ca.length}pts)`
+    );
+
+  // ── Z-TEST (historical baseline) ────────────────────────────────────────
+  } else if (effType === 'z_test' || effType === 'distributional') {
+    const colIdx = colTypes.findIndex(t => t === 'numeric');
+    if (colIdx < 0) { showUploadError('No numeric column found.'); return; }
+    const hist = numericCol(dataRows, colIdx);
+    if (hist.length < 3) {
+      showUploadError(`Only ${hist.length} historical value(s) found. Need at least 3.`);
+      return;
+    }
+    const hm = hist.reduce((a, b) => a + b, 0) / hist.length;
+    const hs = Math.sqrt(hist.reduce((s, v) => s + (v - hm) ** 2, 0) / hist.length);
+    ftFileData = { type: 'z_test', historical_mean: hm, historical_std: hs, n: hist.length };
+    showUploadPreview(
+      `✓ Loaded "${fileName}" — baseline from ${hist.length} historical values in ` +
+      `"${headers[colIdx]}" (mean = ${hm.toFixed(4)}, std = ${hs.toFixed(4)})`
+    );
+
+  // ── CHI-SQUARE ──────────────────────────────────────────────────────────
+  } else if (effType === 'chi_square') {
+    const catIndices = colTypes.map((t, i) => t === 'categorical' ? i : -1).filter(i => i >= 0);
+    const numIndices = colTypes.map((t, i) => t === 'numeric'     ? i : -1).filter(i => i >= 0);
+    if (numIndices.length < 1) { showUploadError('No numeric column found. Chi-square needs counts.'); return; }
+    let observed, expected = null, descNote;
+    if (catIndices.length >= 1) {
+      // category + count format
+      const catIdx = catIndices[0], valIdx = numIndices[0];
+      observed  = dataRows.map(r => parseFloat(r[valIdx])).filter(v => !isNaN(v));
+      if (numIndices.length >= 2) expected = dataRows.map(r => parseFloat(r[numIndices[1]])).filter(v => !isNaN(v));
+      const catLabels = dataRows.map(r => r[catIdx]).filter(Boolean);
+      descNote = `${observed.length} categories from "${headers[catIdx]}"`;
+      ftFileData = { type: 'chi_square', observed, expected, categoryLabels: catLabels };
+    } else {
+      observed = numericCol(dataRows, numIndices[0]);
+      if (numIndices.length >= 2) expected = numericCol(dataRows, numIndices[1]);
+      descNote = `${observed.length} observed counts`;
+      ftFileData = { type: 'chi_square', observed, expected };
+    }
+    showUploadPreview(`✓ Loaded "${fileName}" — ${descNote}${expected ? ', with expected' : ', equal expected assumed'}`);
+
+  // ── KS TEST ─────────────────────────────────────────────────────────────
+  } else if (effType === 'ks_test') {
+    const numIndices = colTypes.map((t, i) => t === 'numeric' ? i : -1).filter(i => i >= 0);
+    if (numIndices.length < 2) {
+      showUploadError(`Need 2 numeric columns (one per sample). Found only ${numIndices.length}.`);
+      return;
+    }
+    const sampleA = numericCol(dataRows, numIndices[0]);
+    const sampleB = numericCol(dataRows, numIndices[1]);
+    ftFileData = { type: 'ks_test', sample_a: sampleA, sample_b: sampleB,
+                   labelA: headers[numIndices[0]], labelB: headers[numIndices[1]] };
+    showUploadPreview(
+      `✓ Loaded "${fileName}" — Sample A "${headers[numIndices[0]]}" (${sampleA.length} pts), ` +
+      `Sample B "${headers[numIndices[1]]}" (${sampleB.length} pts)`
+    );
+  }
+}
+
+function showUploadPreview(msg) {
+  const el = document.getElementById('uploadPreview');
+  if (el) el.innerHTML = `<div class="upload-preview"><div class="upload-preview-label">Detected</div><div class="upload-preview-ok">${msg}</div></div>`;
+}
+
+function showUploadPreviewWithLabels(fileName, groupLabels, groups) {
+  const el = document.getElementById('uploadPreview');
+  if (!el) return;
+  const countStr = groupLabels.map((_, i) => `${groups[i].length} pts`).join(', ');
+  const chips = groupLabels.map(l =>
+    `<span class="group-label-chip" contenteditable="true" spellcheck="false">${l}</span>`
+  ).join('');
+  el.innerHTML = `
+    <div class="upload-preview">
+      <div class="upload-preview-label">Detected</div>
+      <div class="upload-preview-ok">✓ Loaded "${fileName}" — ${groupLabels.length} groups (${countStr}). Click a label to rename.</div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">${chips}</div>
+    </div>`;
+}
+
+function showUploadError(msg) {
+  ftFileData = null;
+  const el = document.getElementById('uploadPreview');
+  if (el) el.innerHTML = `<div class="upload-preview"><div class="upload-preview-err">✕ ${msg}</div></div>`;
+}
+
+/* ── LOAD SAMPLE (manual mode) ───────────────────────────────── */
+const FT_SAMPLES = {
+  directional:     { series: '0.050,0.055,0.058,0.062,0.067,0.069,0.073,0.078,0.080,0.085,0.090,0.093,0.098,0.101,0.105,0.108,0.111,0.115,0.118,0.121,0.128,0.132,0.138,0.145' },
+  comparative:     null,  // handled positionally in loadFTSample
+  causal_series:   { series: '50000,51000,49000,52000,48000,50500,51200,49800,50000,52000,63000,64000,62500,65000,61000,64500,63000,65000,62000,64200', intervention_index: '' },
+  causal_adjacent: { series: '50000,51000,49000,52000,48000,50500,51200,49800,50000,52000,63000,64000,62500,65000,61000,64500,63000,65000,62000,64200', intervention_index: '' },
+  causal_did:      { treatment_before: '50000,51000,49000,52000,48000', treatment_after: '63000,64000,62500,65000,61000', control_before: '45000,46000,44000,47000,43000', control_after: '45500,46200,44800,47500,43500' },
+  z_test:          { current_value: '0.042', historical_values: '0.078,0.082,0.079,0.081,0.080,0.083,0.077,0.084,0.080,0.079,0.081,0.082,0.080,0.078,0.083,0.081,0.079,0.080,0.082,0.081' },
+  distributional:  { current_value: '0.042', historical_values: '0.078,0.082,0.079,0.081,0.080,0.083,0.077,0.084,0.080,0.079,0.081,0.082,0.080,0.078,0.083,0.081,0.079,0.080,0.082,0.081' },
+  chi_square:      { observed: '45, 30, 15, 10', expected: '25, 25, 25, 25' },
+  ks_test:         { sample_a: '2.1, 2.3, 2.0, 2.4, 2.2, 2.5, 2.1, 2.3, 2.6, 2.0', sample_b: '3.1, 3.5, 3.2, 2.9, 3.4, 3.6, 3.0, 3.3, 3.5, 3.2' },
+};
+
+// Sample values for each group slot — indexed positionally so any number of groups works
+const COMPARATIVE_SAMPLE_GROUPS = [
+  '115,122,118,131,108,124,119,126,112,135',
+  '98,103,95,107,99,102,96,104,101,97',
+  '142,138,145,150,135,148,141,147,139,143',
+  '76,82,79,85,71,80,77,83,75,81',
+  '160,165,158,172,155,163,169,161,167,170',
+  '88,91,86,94,90,87,93,89,92,85',
+];
+
+function loadFTSample() {
+  const eff = effectiveInputType();
+
+  // Comparative: fill exactly the groups that currently exist, by position.
+  // Never adds or removes groups — the user controls how many there are.
+  if (eff === 'comparative' || currentClaimType === 'comparative') {
+    document.querySelectorAll('[id^="ft_group_"]').forEach((el, i) => {
+      if (COMPARATIVE_SAMPLE_GROUPS[i]) el.value = COMPARATIVE_SAMPLE_GROUPS[i];
+    });
+    return;
+  }
+
+  const s = FT_SAMPLES[eff] || FT_SAMPLES[currentClaimType];
+  if (!s) return;
+  for (const [key, val] of Object.entries(s)) {
+    const el = document.getElementById(`ft_${key}`);
+    if (el) el.value = val;
+  }
+}
+
+/* ── ADD / REMOVE GROUP (manual comparative) ─────────────────── */
+let _ftGroupCount = 2;  // kept only so clearFreeText can reset it; label logic ignores it
+
+function addFTGroup() {
+  // Derive the next letter from the highest letter currently in the DOM,
+  // not from a counter — so removing D then adding always gives D again.
+  const existingEls = document.querySelectorAll('#ft-group-container [id^="ft_group_"]');
+  const maxCode = [...existingEls].reduce((max, el) => {
+    const ch = el.id.replace('ft_group_', '');
+    return Math.max(max, ch.charCodeAt(0));
+  }, 64);  // 64 = chr before 'A'
+  const letter = String.fromCharCode(maxCode + 1);
+  _ftGroupCount = maxCode - 64 + 1;  // keep counter loosely in sync
+
+  const newDiv = document.createElement('div');
+  newDiv.className = 'field-group';
+  newDiv.id = `ft-dyn-group-${letter}`;
+  newDiv.innerHTML = `
+    <div class="field-label" style="display:flex;justify-content:space-between;align-items:center;">
+      <span class="group-label-text" ondblclick="editGroupLabel(this)" title="Double-click to rename">Group ${letter}</span>
+      <span style="cursor:pointer;color:var(--text-dim);font-size:10px;" onclick="removeFTGroup('${letter}')">✕ remove</span>
+    </div>
+    <textarea id="ft_group_${letter.toLowerCase()}" rows="2" placeholder="Comma-separated values"></textarea>`;
+  const gc = document.getElementById('ft-group-container');
+  if (gc) gc.appendChild(newDiv);
+}
+
+function removeFTGroup(letter) {
+  document.getElementById(`ft-dyn-group-${letter}`)?.remove();
+}
+
+/* Inline rename: double-click a group label to edit it in-place */
+function editGroupLabel(span) {
+  const current = span.textContent.trim();
+  const input   = document.createElement('input');
+  input.type  = 'text';
+  input.value = current;
+  input.style.cssText = [
+    'background:transparent', 'border:none',
+    'border-bottom:1px solid var(--amber)',
+    'color:var(--text)', 'font-family:var(--font-mono)',
+    'font-size:9px', 'letter-spacing:.18em',
+    'text-transform:uppercase', 'outline:none',
+    'width:120px', 'padding:0',
+  ].join(';');
+  span.replaceWith(input);
+  input.focus(); input.select();
+
+  function commit() {
+    const label = input.value.trim() || current;
+    const newSpan = document.createElement('span');
+    newSpan.className    = 'group-label-text';
+    newSpan.textContent  = label;
+    newSpan.title        = 'Double-click to rename';
+    newSpan.ondblclick   = function() { editGroupLabel(this); };
+    input.replaceWith(newSpan);
+  }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+}
+
+/* ── RUN FREE TEXT ───────────────────────────────────────────── */
+function parseNums(str) {
+  return str.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).map(Number);
+}
+
+async function runFreeText() {
+  const hypText = (document.getElementById('ft-hyp')?.value || '').trim();
+  if (!hypText) { toast('Please enter your hypothesis'); return; }
+
+  const claimType = currentClaimType;
+  if (!claimType) { toast('Keep typing — Lighthouse needs more detail to detect the analysis type'); return; }
+
+  const eff = effectiveInputType();
+
+  // Guard: require a sub-type to be selected for types that need one
+  if ((claimType === 'distributional' || claimType === 'causal_adjacent') && !ftSubtype) {
+    toast('Please select an analysis approach above'); return;
+  }
+
+  let data;
+  let rawForChart = {};
+
+  // ── Gather data ──────────────────────────────────────────────
+  if (ftDataMode === 'upload') {
+    if (!ftFileData) { toast('Please upload a data file first'); return; }
+
+    if (ftFileData.type === 'series') {
+      rawForChart.series = ftFileData.series;
+      if (claimType === 'directional') {
+        data = ftFileData.series;
+      } else {
+        // Causal series: honour the optional intervention index from the upload
+        // panel. Without it we fall through to change-point detection below.
+        const idxRaw = document.getElementById('ft_intervention_index')?.value.trim();
+        const idx    = idxRaw ? parseInt(idxRaw, 10) : null;
+        if (idx !== null && !isNaN(idx)) {
+          data = { series: ftFileData.series, intervention_index: idx };
+          rawForChart.intervention_index = idx;
+        } else {
+          data = { series: ftFileData.series };
+        }
+      }
+
+    } else if (ftFileData.type === 'groups') {
+      ftFileData.groups.forEach((g, i) => { rawForChart[`group_${String.fromCharCode(97 + i)}`] = g; });
+      // Prefer any names the user edited in the chip row; fall back to file headers
+      const _chips = document.querySelectorAll('#uploadPreview .group-label-chip');
+      rawForChart._groupLabels = _chips.length
+        ? [..._chips].map((el, i) => el.textContent.trim() || ftFileData.groupLabels?.[i] || `Group ${String.fromCharCode(65 + i)}`)
+        : ftFileData.groupLabels;
+      data = { groups: ftFileData.groups };
+
+    } else if (ftFileData.type === 'z_test' || ftFileData.type === 'distributional') {
+      const cv = parseFloat(document.getElementById('ft_current_value')?.value);
+      if (isNaN(cv)) { toast('Please enter the current value to test'); return; }
+      data = { current_value: cv, historical_mean: ftFileData.historical_mean, historical_std: ftFileData.historical_std };
+      rawForChart = { ...data, n: ftFileData.n };
+
+    } else if (ftFileData.type === 'causal_did') {
+      data = { treatment_before: ftFileData.treatment_before, treatment_after: ftFileData.treatment_after,
+               control_before:   ftFileData.control_before,   control_after:   ftFileData.control_after };
+      rawForChart.group_a = ftFileData.treatment_before;
+      rawForChart.group_b = ftFileData.treatment_after;
+      rawForChart.group_c = ftFileData.control_before;
+      rawForChart.group_d = ftFileData.control_after;
+      rawForChart._groupLabels = ['Treatment · Before', 'Treatment · After', 'Control · Before', 'Control · After'];
+
+    } else if (ftFileData.type === 'chi_square') {
+      data = { type: 'categorical', observed: ftFileData.observed };
+      if (ftFileData.expected) data.expected = ftFileData.expected;
+      rawForChart.observed       = ftFileData.observed;
+      rawForChart.expected       = ftFileData.expected       || null;
+      rawForChart.categoryLabels = ftFileData.categoryLabels || null;
+
+    } else if (ftFileData.type === 'ks_test') {
+      data = { mode: 'distribution', sample_a: ftFileData.sample_a, sample_b: ftFileData.sample_b };
+      rawForChart.sample_a = ftFileData.sample_a;
+      rawForChart.sample_b = ftFileData.sample_b;
+      rawForChart._labelA  = ftFileData.labelA || 'Sample A';
+      rawForChart._labelB  = ftFileData.labelB || 'Sample B';
+    }
+
+  } else {
+    // ── Manual entry ────────────────────────────────────────────
+    if (eff === 'directional') {
+      const t = document.getElementById('ft_series')?.value.trim();
+      if (!t) { toast('Please enter your time series data'); return; }
+      rawForChart.series = parseNums(t);
+      data = rawForChart.series;
+
+    } else if (eff === 'comparative') {
+      const groups = [], groupLabels = [];
+      document.querySelectorAll('[id^="ft_group_"]').forEach(el => {
+        const v = el.value.trim();
+        if (v) {
+          const arr = parseNums(v);
+          groups.push(arr);
+          rawForChart[el.id.replace('ft_', '')] = arr;
+          // Capture custom label from the editable span, fall back to letter
+          const labelEl = el.closest('.field-group')?.querySelector('.group-label-text');
+          groupLabels.push(labelEl?.textContent?.trim() || el.id.replace('ft_group_', 'Group ').toUpperCase());
+        }
+      });
+      if (groups.length < 2) { toast('Please enter at least 2 groups of data'); return; }
+      rawForChart._groupLabels = groupLabels;
+      data = { groups };
+
+    } else if (eff === 'causal_series' || eff === 'causal_adjacent') {
+      const t = document.getElementById('ft_series')?.value.trim();
+      if (!t) { toast('Please enter your time series data'); return; }
+      rawForChart.series = parseNums(t);
+      const idxRaw = document.getElementById('ft_intervention_index')?.value.trim();
+      const idx    = idxRaw ? parseInt(idxRaw, 10) : null;
+      if (idx !== null) {
+        data = { series: rawForChart.series, intervention_index: idx };
+        rawForChart.intervention_index = idx;
+      } else {
+        data = { series: rawForChart.series, mode: 'change_point' };
+      }
+
+    } else if (eff === 'causal_did') {
+      const tb = parseNums(document.getElementById('ft_treatment_before')?.value || '');
+      const ta = parseNums(document.getElementById('ft_treatment_after')?.value  || '');
+      const cb = parseNums(document.getElementById('ft_control_before')?.value   || '');
+      const ca = parseNums(document.getElementById('ft_control_after')?.value    || '');
+      if (!tb.length || !ta.length || !cb.length || !ca.length) {
+        toast('Please fill in all four DiD groups'); return;
+      }
+      data = { treatment_before: tb, treatment_after: ta, control_before: cb, control_after: ca };
+      rawForChart.group_a = tb;
+      rawForChart.group_b = ta;
+      rawForChart.group_c = cb;
+      rawForChart.group_d = ca;
+      rawForChart._groupLabels = ['Treatment · Before', 'Treatment · After', 'Control · Before', 'Control · After'];
+
+    } else if (eff === 'z_test' || eff === 'distributional') {
+      const cv = parseFloat(document.getElementById('ft_current_value')?.value);
+      if (isNaN(cv)) { toast('Please enter the current value to test'); return; }
+      const histText = document.getElementById('ft_historical_values')?.value.trim();
+      if (!histText) { toast('Please enter historical values'); return; }
+      const hist = parseNums(histText);
+      if (hist.length < 3) { toast('Please enter at least 3 historical values'); return; }
+      const hm = hist.reduce((a, b) => a + b, 0) / hist.length;
+      const hs = Math.sqrt(hist.reduce((s, v) => s + (v - hm) ** 2, 0) / hist.length);
+      data = { current_value: cv, historical_mean: hm, historical_std: hs };
+      rawForChart = { ...data, n: hist.length };
+
+    } else if (eff === 'chi_square') {
+      const obsText = document.getElementById('ft_observed')?.value.trim();
+      if (!obsText) { toast('Please enter observed counts'); return; }
+      const observed = parseNums(obsText);
+      if (observed.length < 2) { toast('Please enter at least 2 category counts'); return; }
+      const expText  = document.getElementById('ft_expected')?.value.trim();
+      const expected = expText ? parseNums(expText) : null;
+      data = { type: 'categorical', observed };
+      if (expected?.length) data.expected = expected;
+      rawForChart.observed = observed;
+      rawForChart.expected = expected?.length ? expected : null;
+
+    } else if (eff === 'ks_test') {
+      const aText = document.getElementById('ft_sample_a')?.value.trim();
+      const bText = document.getElementById('ft_sample_b')?.value.trim();
+      if (!aText || !bText) { toast('Please enter both samples'); return; }
+      const sampleA = parseNums(aText);
+      const sampleB = parseNums(bText);
+      if (sampleA.length < 3 || sampleB.length < 3) { toast('Need at least 3 values per sample'); return; }
+      data = { mode: 'distribution', sample_a: sampleA, sample_b: sampleB };
+      rawForChart.sample_a = sampleA;
+      rawForChart.sample_b = sampleB;
+      rawForChart._labelA  = 'Sample A';
+      rawForChart._labelB  = 'Sample B';
+    }
+  }
+
+  // Attach direction metadata
+  rawForChart._hypothesisDirection = claimType === 'comparative'
+    ? inferComparisonDirection(hypText)
+    : inferDirection(hypText);
+
+  const hypothesis = { claim_type: claimType, text: hypText, metric: null, direction: inferDirection(hypText) };
+  // Directional: quantification language ("slope", "rate of change", "how fast",
+  // "per month"…) routes to Linear Regression; otherwise trend detection (M-K).
+  if (claimType === 'directional' && inferSlopeIntent(hypText)) hypothesis.mode = 'slope';
+  // For single-series causal without an intervention index, auto-detect change points.
+  // Must be set on both hypothesis AND data because test_selector checks data.get("mode").
+  if (claimType === 'causal_adjacent' && eff !== 'causal_did') {
+    const idxVal = document.getElementById('ft_intervention_index')?.value.trim();
+    if (!idxVal && data && typeof data === 'object' && !Array.isArray(data) && !data.intervention_index) {
+      data.mode = 'change_point';
+    }
+  }
+
+  // ── Sample size warnings ────────────────────────────────────
+  const sizeWarnings = checkSampleSizes(rawForChart);
+
+  // ── Phantom-group check ─────────────────────────────────────
+  // Flag groups named in the hypothesis that aren't present in the data
+  // (e.g. "northeast vs northwest" when the file only has Northeast/Southwest),
+  // so the user knows the hypothesis and data don't line up.
+  const phantomNotes = claimType === 'comparative'
+    ? checkPhantomGroups(hypText, rawForChart._groupLabels)
+    : [];
+
+  setFTLoading(true);
+  document.getElementById('resultsPanel').innerHTML = `
+    <div class="results-empty"><span class="spin"></span>
+      <div class="results-empty-text" style="margin-top:12px">Analysing hypothesis…</div>
+    </div>`;
+
+  try {
+    const res  = await fetch(`${API}/run-hypothesis`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ hypothesis, data })
+    });
+    const json = await res.json();
+    if (json.status !== 'success') { toast(`Error: ${json.message}`); showErrorResults(json.message); return; }
+
+    const wrap   = json.result;
+    const testId = wrap.selected_test;
+    const stats  = wrap.result;
+    resolvedTest = { name: FT_TEST_NAMES[testId] || testId, test: testId };
+    renderResults(stats, rawForChart);
+
+    const panel   = document.getElementById('resultsPanel');
+    const hypCard = `
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-mid);padding:14px 16px;margin-bottom:18px;border-radius:var(--radius);">
+        <div style="font-size:8px;letter-spacing:.28em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px;">Hypothesis</div>
+        <div style="font-family:var(--font-serif);font-style:italic;font-size:15px;color:var(--text-soft);line-height:1.5;">"${hypText}"</div>
+        <div style="display:flex;gap:24px;margin-top:10px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--text-dim);">Analysis type</div>
+            <div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${CLAIM_LABELS[claimType] || claimType}</div>
+          </div>
+          <div>
+            <div style="font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--text-dim);">Test selected</div>
+            <div style="color:var(--amber);font-size:11px;margin-top:2px;">${FT_TEST_NAMES[testId] || testId}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-muted);line-height:1.5;">${wrap.verdict}</div>
+      </div>`;
+    const warningHtml = sizeWarnings.length ? `
+      <div class="size-warning">
+        <div class="size-warning-label">Sample Size Notice</div>
+        ${sizeWarnings.map(w => `<div class="size-warning-item">⚠ ${w}</div>`).join('')}
+      </div>` : '';
+    const phantomHtml = phantomNotes.length ? `
+      <div class="size-warning" style="border-left-color:var(--red);background:rgba(255,68,85,0.05);border-color:rgba(255,68,85,0.18);">
+        <div class="size-warning-label" style="color:var(--red);">Hypothesis / Data Mismatch</div>
+        ${phantomNotes.map(w => `<div class="size-warning-item">⚠ ${w}</div>`).join('')}
+      </div>` : '';
+    // Use insertAdjacentHTML so we prepend without destroying the canvas that
+    // renderResults just drew a Chart.js chart onto. Mismatch notice goes first
+    // because it means the user may have tested the wrong thing entirely.
+    panel.insertAdjacentHTML('afterbegin', phantomHtml + warningHtml + hypCard);
+
+  } catch {
+    toast('Cannot reach Flask server — is it running on port 5000?');
+    showErrorResults(`Cannot reach ${API}`);
+  } finally { setFTLoading(false); }
+}
+
+/* ── SAMPLE SIZE WARNINGS ────────────────────────────────────── */
+function checkSampleSizes(rawForChart) {
+  const warnings = [];
+  const eff = effectiveInputType();
+
+  if (eff === 'directional' || eff === 'causal_series' || eff === 'causal_adjacent') {
+    const n = rawForChart.series?.length ?? 0;
+    if (n < 8)        warnings.push(`Time series has only ${n} data points — at least 8 recommended for reliable trend detection.`);
+    else if (n < 12)  warnings.push(`Time series has ${n} data points — results are more reliable with 12 or more observations.`);
+  }
+
+  if (eff === 'comparative') {
+    const groupKeys = Object.keys(rawForChart).filter(k => /^group_[a-z]$/.test(k));
+    groupKeys.forEach((k, gi) => {
+      const g = rawForChart[k];
+      if (Array.isArray(g) && g.length < 10) {
+        const lbl = rawForChart._groupLabels?.[gi] ?? `Group ${String.fromCharCode(65 + gi)}`;
+        warnings.push(`${lbl} has only ${g.length} observation${g.length === 1 ? '' : 's'} — at least 10 recommended per group.`);
+      }
+    });
+  }
+
+  if (eff === 'z_test' || eff === 'distributional') {
+    const n = rawForChart.n ?? 0;
+    if (n > 0 && n < 10) warnings.push(`Baseline history has only ${n} value${n === 1 ? '' : 's'} — at least 10 recommended for a reliable Z-test.`);
+  }
+
+  if (eff === 'ks_test') {
+    const na = rawForChart.sample_a?.length ?? 0;
+    const nb = rawForChart.sample_b?.length ?? 0;
+    if (na < 10) warnings.push(`Sample A has only ${na} value${na === 1 ? '' : 's'} — at least 10 recommended.`);
+    if (nb < 10) warnings.push(`Sample B has only ${nb} value${nb === 1 ? '' : 's'} — at least 10 recommended.`);
+  }
+
+  return warnings;
+}
+
+/* ── PHANTOM-GROUP CHECK ─────────────────────────────────────── */
+// Pull out words the user explicitly framed as a group ("northeast segment",
+// "west region", "premium cohort"…). High precision: we only treat a word as a
+// group reference when it's tagged with one of these nouns.
+const _GROUP_NOUNS = 'segments?|regions?|markets?|cohorts?|categor(?:y|ies)|channels?|teams?|products?|groups?|divisions?|brands?|stores?|locations?|tiers?|plans?';
+const _GROUP_STOPWORDS = new Set(['the','a','an','this','that','each','every','our','their','its','any','some','no','same','other','one','two','three','both','these','those','per','first','second','third','last','next','given','overall','total']);
+// Words that can follow a comparison word ("than X", "vs X") but are NOT group
+// names — baselines, time references, vague referents. Keeps us from flagging
+// "lower than expected" or "vs last year" as a phantom group.
+const _NON_GROUP_WORDS = new Set([
+  'expected','usual','normal','average','mean','median','baseline','chance','random','zero',
+  'before','after','ever','never','always','predicted','forecast','forecasted','projection',
+  'projections','estimate','estimates','expectation','expectations','typical','historical',
+  'history','last','previous','prior','earlier','recent','rest','others','other','everyone',
+  'anyone','someone','everything','anything','nothing','them','they','par','target','benchmark',
+  'threshold','goal','plan','budget','competition','competitor','competitors',
+  'year','years','month','months','week','weeks','quarter','quarters','day','days','today',
+  'yesterday','now','before',
+]);
+
+function _isGroupToken(w) {
+  return !!w && w.length >= 3 && !_GROUP_STOPWORDS.has(w) && !_NON_GROUP_WORDS.has(w) && isNaN(parseFloat(w));
+}
+
+function extractHypothesisGroups(text) {
+  const t = (text || '').toLowerCase();
+  const ents = new Set();
+  let m;
+
+  // 1. Words explicitly tagged with a group noun: "northeast segment", "west region".
+  const reNoun = new RegExp(`([a-z][a-z0-9'\\-]*)\\s+(?:${_GROUP_NOUNS})\\b`, 'g');
+  while ((m = reNoun.exec(t)) !== null) {
+    if (_isGroupToken(m[1])) ents.add(m[1]);
+  }
+
+  // 2. The entity after a comparison word: "lower than southeast", "vs midwest",
+  //    "outperformed the west". Captures groups that aren't tagged with a noun.
+  const reCompare = /(?:than|versus|vs\.?|compared\s+(?:to|with)|relative\s+to|against|outperform(?:s|ed|ing)?|underperform(?:s|ed|ing)?|beat(?:s|en)?|exceed(?:s|ed)?|trail(?:s|ed)?)\s+(?:the|a|an|our|their|its|that|all|every)?\s*([a-z][a-z0-9'\-]*)/g;
+  while ((m = reCompare.exec(t)) !== null) {
+    if (_isGroupToken(m[1])) ents.add(m[1]);
+  }
+
+  // 3. "between X and Y" — both sides are entities.
+  const reBetween = /\bbetween\s+(?:the\s+)?([a-z][a-z0-9'\-]*)\s+and\s+(?:the\s+)?([a-z][a-z0-9'\-]*)/g;
+  while ((m = reBetween.exec(t)) !== null) {
+    if (_isGroupToken(m[1])) ents.add(m[1]);
+    if (_isGroupToken(m[2])) ents.add(m[2]);
+  }
+
+  return [...ents];
+}
+
+// Returns notes for groups named in the hypothesis that aren't in the data.
+// Only fires when at least one OTHER named group DID match a real label — that
+// confirms the user is referring to the actual groups by name, so an unmatched
+// one is a genuine mismatch rather than just different naming/casing.
+function checkPhantomGroups(hypText, labels) {
+  if (!Array.isArray(labels) || !labels.length) return [];
+  const named = extractHypothesisGroups(hypText);
+  if (named.length < 2) return [];
+
+  const norm = s => String(s).toLowerCase().trim();
+  const labelSet = labels.map(norm).filter(Boolean);
+  const matches = ent => labelSet.some(l => l === ent || l.includes(ent) || ent.includes(l));
+
+  const matched   = named.filter(matches);
+  const unmatched = named.filter(e => !matches(e));
+  if (!matched.length || !unmatched.length) return [];
+
+  const avail = labels.join(', ');
+  const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
+  return unmatched.map(e =>
+    `"${cap(e)}" is named in your hypothesis but isn't in the data — available groups: ${avail}. ` +
+    `The test ran on the groups found; double-check your hypothesis or upload the matching data.`
+  );
+}
+
+function setFTLoading(on) {
+  const btn = document.getElementById('ftRunBtn');
+  if (!btn) return;
+  btn.disabled = on;
+  btn.innerHTML = on ? '<span class="spin"></span>Running…' : 'Run ▶';
+}
+
+function clearFreeText() {
+  const hyp = document.getElementById('ft-hyp');
+  if (hyp) hyp.value = '';
+  document.getElementById('ft-badge').innerHTML = '';
+  const overSel  = document.getElementById('ft-override-select');
+  const overLink = document.getElementById('ft-override-link');
+  if (overSel)  { overSel.style.display = 'none'; overSel.querySelector('select').value = ''; }
+  if (overLink) overLink.textContent = 'Select analysis type manually →';
+  _selectAutoOpened = false;
+  document.getElementById('ft-data-fields').innerHTML = '';
+  currentClaimType = '';
+  ftFileData = null;
+  ftSubtype  = null;
+  lastResult = null;
+  _ftGroupCount = 2;
+  clearResults();
+}
+
+/* ── FT TEST NAMES ───────────────────────────────────────────── */
+const FT_TEST_NAMES = {
+  mann_kendall_test:'Mann–Kendall', linear_regression_test:'Linear Regression',
+  t_test:'Welch T-Test', mann_whitney_test:'Mann–Whitney U',
+  anova_test:'One-Way ANOVA', kruskal_wallis_test:'Kruskal–Wallis',
+  difference_in_differences:'Diff-in-Differences',
+  interrupted_time_series:'Interrupted Time Series',
+  detect_change_point:'Change Point Detection',
+  z_test:'Z-Test (Anomaly)', chi_square_test:'Chi-Square',
+  ks_test:'Kolmogorov–Smirnov',
+};
+
+/* ── RESULTS ─────────────────────────────────────────────────── */
+let resolvedTest = null;
+
+function clearResults() {
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  document.getElementById('resultsPanel').innerHTML = `
+    <div class="results-empty">
+      <div class="results-empty-icon">◈</div>
+      <div class="results-empty-text">Awaiting run</div>
+    </div>`;
+}
+
+function showErrorResults(msg) {
+  document.getElementById('resultsPanel').innerHTML = `
+    <div class="results-empty">
+      <div class="results-empty-icon" style="color:var(--red)">✕</div>
+      <div class="results-empty-text" style="color:var(--red);max-width:260px;text-align:center;line-height:1.6">${msg}</div>
+    </div>`;
+}
+
+function fmtNum(v) {
+  if (typeof v !== 'number') return String(v);
+  if (Number.isNaN(v))  return 'n/a';
+  if (!isFinite(v))     return v > 0 ? '∞' : '−∞';
+  if (Math.abs(v) < 0.0001 && v !== 0) return v.toExponential(4);
+  return parseFloat(v.toFixed(6)).toString();
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+/* ── PLAIN ENGLISH ───────────────────────────────────────────── */
+function buildPlainEnglish(testId, result, raw) {
+  const p    = result.p_value;
+  const sig  = p !== undefined ? p < alpha : result.significant;
+  const pStr = p !== undefined ? (p < 0.0001 ? p.toExponential(2) : p.toFixed(4)) : null;
+  const sigStr = sig ? `below our significance threshold of α = ${alpha}, providing strong statistical evidence`
+                     : `above our significance threshold of α = ${alpha}, so we cannot rule out that this result is due to chance`;
+
+  if (testId === 'linear_regression_test') {
+    const slope    = result.slope ?? result.b1;
+    const r2       = result.r_squared ?? result.r2;
+    const dir      = slope > 0 ? 'positive (upward)' : 'negative (downward)';
+    const change   = slope > 0 ? 'increases' : 'decreases';
+    const slopeStr = slope !== undefined ? Math.abs(slope).toFixed(4) : '?';
+    const r2Str    = r2 !== undefined ? (r2 * 100).toFixed(1) : null;
+    const hypDir   = raw._hypothesisDirection;
+    let text = `The regression found a ${dir} slope of approximately ${slopeStr}, meaning the metric ${change} by about ${slopeStr} per unit of time.`;
+    if (r2Str) text += ` The model explains ${r2Str}% of the variation in the data.`;
+    if (pStr)  text += ` The p-value (${pStr}) is ${sigStr}.`;
+    if (hypDir && sig) {
+      const matches = (slope > 0 && hypDir === 'increasing') || (slope < 0 && hypDir === 'decreasing');
+      text += matches
+        ? ` This confirms the hypothesised ${hypDir} direction.`
+        : ` Note: the data trend is ${slope > 0 ? 'increasing' : 'decreasing'}, which is the opposite of the stated hypothesis.`;
+    }
+    return text;
+  }
+  if (testId === 'mann_kendall_test') {
+    const tau    = result.tau ?? result.kendall_tau;
+    const dir    = tau > 0 ? 'upward (increasing)' : tau < 0 ? 'downward (decreasing)' : 'flat';
+    const hypDir = raw._hypothesisDirection;
+    let text = `The Mann–Kendall test detected an overall ${dir} trend in your data.`;
+    if (tau !== undefined) text += ` The Kendall τ statistic was ${tau.toFixed(3)}.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? `, confirming a statistically significant ${dir} trend` : ', so this trend is not statistically significant'}.`;
+    if (hypDir && sig) {
+      const matches = (tau > 0 && hypDir === 'increasing') || (tau < 0 && hypDir === 'decreasing');
+      if (!matches) text += ` This contradicts the hypothesised ${hypDir} direction.`;
+    }
+    return text;
+  }
+  if (testId === 't_test') {
+    const [lA, lB] = getGroupLabels(raw);
+    const ga    = raw.group_a ?? [];
+    const gb    = raw.group_b ?? [];
+    const meanA = ga.length ? (ga.reduce((a, b) => a + b, 0) / ga.length) : null;
+    const meanB = gb.length ? (gb.reduce((a, b) => a + b, 0) / gb.length) : null;
+    const higher = meanA !== null && meanB !== null ? (meanA > meanB ? lA : lB) : null;
+    const pctDiff = (meanA && meanB) ? Math.abs((meanA - meanB) / meanB * 100).toFixed(1) : null;
+    const t     = result.t_statistic ?? result.statistic;
+    let text = `The Welch t-test compared the means of ${lA} and ${lB}.`;
+    if (meanA !== null && meanB !== null) {
+      text += ` ${lA} averaged ${meanA.toFixed(2)} vs ${lB} at ${meanB.toFixed(2)}`;
+      if (pctDiff) text += ` — a ${pctDiff}% difference, with ${higher} being higher`;
+      text += '.';
+    }
+    if (Number.isFinite(t)) text += ` The t-statistic was ${t.toFixed(3)}.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? `, meaning ${higher ? `${higher} is significantly ${higher === lA ? 'higher' : 'lower'}` : 'there is a real difference between the groups'}` : ', so the observed difference may be due to chance'}.`;
+    return text;
+  }
+  if (testId === 'mann_whitney_test') {
+    const [lA, lB] = getGroupLabels(raw);
+    const ga    = raw.group_a ?? [];
+    const gb    = raw.group_b ?? [];
+    const medA  = ga.length ? [...ga].sort((a,b)=>a-b)[Math.floor(ga.length/2)] : null;
+    const medB  = gb.length ? [...gb].sort((a,b)=>a-b)[Math.floor(gb.length/2)] : null;
+    const higher = medA !== null && medB !== null ? (medA > medB ? lA : lB) : null;
+    const u = result.u_statistic ?? result.statistic;
+    let text = `The Mann–Whitney U test compared ${lA} and ${lB} without assuming normality.`;
+    if (medA !== null && medB !== null) text += ` Median values: ${lA} = ${medA.toFixed(2)}, ${lB} = ${medB.toFixed(2)}${higher ? ` (${higher} is higher)` : ''}.`;
+    if (u !== undefined) text += ` The U statistic was ${u.toFixed(1)}.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? `, suggesting ${higher ? `${higher} has a significantly ${higher === lA ? 'higher' : 'lower'} distribution` : 'a meaningful difference between the groups'}` : ', so we cannot conclude the groups differ significantly'}.`;
+    return text;
+  }
+  if (testId === 'anova_test') {
+    const f = result.f_statistic ?? result.statistic;
+    const _gKeys  = Object.keys(raw).filter(k => /^group_[a-z]$/.test(k)).sort();
+    const _gData  = _gKeys.map(k => raw[k]).filter(g => Array.isArray(g) && g.length > 0);
+    const _gLbls  = raw._groupLabels ?? _gData.map((_, i) => `Group ${String.fromCharCode(65 + i)}`);
+    const _means  = _gData.map(g => g.reduce((s, v) => s + v, 0) / g.length);
+    let text = `One-way ANOVA tests whether the means of ${_gData.length >= 2 ? _gData.length : 'three or more'} groups are equal.`;
+    if (_gData.length >= 2) {
+      const meanStr = _gData.map((_, i) => `${_gLbls[i]} (${_means[i].toFixed(2)})`).join(', ');
+      const hiIdx   = _means.indexOf(Math.max(..._means));
+      const loIdx   = _means.indexOf(Math.min(..._means));
+      text += ` Group means: ${meanStr}.`;
+      if (hiIdx !== loIdx) text += ` ${_gLbls[hiIdx]} is highest, ${_gLbls[loIdx]} is lowest.`;
+    }
+    if (Number.isFinite(f)) text += ` The F-statistic was ${f.toFixed(3)}.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? '. At least one group mean is significantly different from the others' : ', so there is insufficient evidence to conclude the group means are different'}.`;
+    return text;
+  }
+  if (testId === 'kruskal_wallis_test') {
+    const h = result.h_statistic ?? result.statistic;
+    const _gKeys  = Object.keys(raw).filter(k => /^group_[a-z]$/.test(k)).sort();
+    const _gData  = _gKeys.map(k => raw[k]).filter(g => Array.isArray(g) && g.length > 0);
+    const _gLbls  = raw._groupLabels ?? _gData.map((_, i) => `Group ${String.fromCharCode(65 + i)}`);
+    const _med    = g => { const s = [...g].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+    const _meds   = _gData.map(g => _med(g));
+    let text = `The Kruskal–Wallis test is a non-parametric equivalent of ANOVA for three or more groups.`;
+    if (_gData.length >= 2) {
+      const medStr = _gData.map((_, i) => `${_gLbls[i]} (${_meds[i].toFixed(2)})`).join(', ');
+      const hiIdx  = _meds.indexOf(Math.max(..._meds));
+      const loIdx  = _meds.indexOf(Math.min(..._meds));
+      text += ` Medians: ${medStr}.`;
+      if (hiIdx !== loIdx) text += ` ${_gLbls[hiIdx]} is highest, ${_gLbls[loIdx]} is lowest.`;
+    }
+    if (Number.isFinite(h)) text += ` The H-statistic was ${h.toFixed(3)}.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? '. At least one group is drawn from a different distribution' : ', so there is no significant difference across the groups'}.`;
+    return text;
+  }
+  if (testId === 'z_test') {
+    const z    = result.z_score ?? result.statistic;
+    const cv   = raw.current_value;
+    const mean = raw.historical_mean;
+    const dir  = cv > mean ? 'above' : 'below';
+    const fmt4 = v => (v !== undefined && v !== null) ? parseFloat(Number(v).toFixed(4)).toString() : null;
+    let text = `The Z-test checks whether the current value is unusually far from the historical baseline.`;
+    if (cv !== null && cv !== undefined && mean !== null && mean !== undefined) text += ` The current value of ${fmt4(cv)} is ${dir} the historical mean of ${fmt4(mean)}.`;
+    if (z !== undefined) text += ` The Z-score of ${z.toFixed(2)} tells us how many standard deviations away it sits.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? ', flagging this as a statistically significant anomaly' : ', so this deviation is within the range of normal variation'}.`;
+    return text;
+  }
+  if (testId === 'chi_square_test') {
+    const chi2 = result.chi_square_statistic ?? result.chi2 ?? result.statistic;
+    const hasExp = Array.isArray(raw.expected) && raw.expected.length > 0;
+    let text = `The chi-square test assesses whether observed category counts differ from what we'd expect.`;
+    if (!hasExp) text += ` No expected counts were provided, so a uniform distribution was assumed.`;
+    if (chi2 !== undefined) text += ` The chi-square statistic was ${Number(chi2).toFixed(3)}.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? ', meaning the observed distribution is significantly different from expected' : ', so the observed frequencies are consistent with the expected distribution'}.`;
+    return text;
+  }
+  if (testId === 'ks_test') {
+    const ks  = result.ks_statistic ?? result.statistic;
+    const lA  = raw._labelA || 'Sample A';
+    const lB  = raw._labelB || 'Sample B';
+    const nA  = raw.sample_a?.length;
+    const nB  = raw.sample_b?.length;
+    let text = `The Kolmogorov–Smirnov test checks whether ${lA} and ${lB} are drawn from the same underlying distribution.`;
+    if (nA && nB) text += ` Sample sizes: ${lA} = ${nA}, ${lB} = ${nB}.`;
+    if (ks !== undefined) text += ` The KS statistic of ${ks.toFixed(4)} measures the maximum gap between the two empirical CDFs.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}${sig ? `, indicating ${lA} and ${lB} likely come from different distributions` : `, so ${lA} and ${lB} are consistent with sharing the same distribution`}.`;
+    return text;
+  }
+  if (testId === 'difference_in_differences') {
+    const est = result.did_estimate ?? result.estimate ?? result.difference_in_differences;
+    const dir = est > 0 ? 'positive' : 'negative';
+    let text = `The difference-in-differences design estimates the causal effect of the intervention by comparing changes in the treatment group relative to a control group.`;
+    if (est !== undefined) text += ` The estimated treatment effect is ${est > 0 ? '+' : ''}${Number(est).toFixed(2)}, a ${dir} impact.`;
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}.`;
+    else text += ` Review the estimate alongside confidence intervals to assess whether the effect is meaningful.`;
+    return text;
+  }
+  if (testId === 'interrupted_time_series') {
+    const pre  = result.pre_mean  ?? result.mean_before;
+    const post = result.post_mean ?? result.mean_after;
+    const chg  = (pre !== undefined && post !== undefined) ? post - pre : null;
+    let text = `The interrupted time series analysis splits your data at the intervention point and compares the pre- and post-intervention levels.`;
+    if (pre !== undefined && post !== undefined) {
+      const chgDir = chg > 0 ? 'an increase' : chg < 0 ? 'a decrease' : 'no change';
+      text += ` The mean before the intervention was ${Number(pre).toFixed(2)} and after was ${Number(post).toFixed(2)} — ${chgDir} of ${chg > 0 ? '+' : ''}${Number(chg).toFixed(2)}.`;
+    }
+    if (pStr) text += ` The p-value (${pStr}) is ${sigStr}.`;
+    return text;
+  }
+  if (testId === 'detect_change_point') {
+    // Backend returns all_breakpoints (array) and change_point (first breakpoint or null)
+    const cps = result.all_breakpoints ?? result.change_points ?? result.breakpoints;
+    const first = result.change_point ?? result.all_breakpoints?.[0];
+    let text = `The PELT change point detection algorithm scans the series for structural breaks where the data's level or variance shifts significantly.`;
+    if (Array.isArray(cps) && cps.length > 1) {
+      // all_breakpoints includes a sentinel endpoint — report all except the last
+      const detected = cps.slice(0, -1);
+      text += detected.length
+        ? ` It identified ${detected.length} change point${detected.length > 1 ? 's' : ''} at position${detected.length > 1 ? 's' : ''} ${detected.join(', ')}.`
+        : ` No statistically significant change points were detected.`;
+    } else if (first != null) {
+      text += ` It identified a change point at position ${first}.`;
+    } else {
+      text += ` No statistically significant change points were detected.`;
+    }
+    return text;
+  }
+  if (pStr) return `The test returned a p-value of ${pStr}, which is ${sigStr}.`;
+  return `The test completed. Review the statistics table for detailed results.`;
+}
+
+/* ── RENDER RESULTS ──────────────────────────────────────────── */
+function downloadResults() {
+  if (!lastResult) return;
+  const blob = new Blob([JSON.stringify(lastResult, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `lighthouse-result-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderResults(result, raw) {
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  // Store for export
+  lastResult = {
+    timestamp:   new Date().toISOString(),
+    hypothesis:  document.getElementById('ft-hyp')?.value?.trim() || null,
+    claim_type:  currentClaimType || null,
+    test:        resolvedTest?.name || null,
+    alpha,
+    result,
+  };
+
+  const hasSig = result.significant !== undefined;
+  const hasP   = result.p_value !== undefined;
+  // Always respect the user's chosen alpha when a p-value is available.
+  // Fall back to result.significant (backend uses 0.05) only when there is no p-value.
+  const sig    = hasP ? (result.p_value < alpha) : (hasSig ? result.significant : undefined);
+  const isDesc = !hasSig && !hasP;
+
+  // Direction alignment check
+  const hypDir = raw._hypothesisDirection ?? null;
+  const actDir = getActualDirection(currentClaimType, resolvedTest?.test, result, raw);
+  // aligned: true = matches, false = contradicts, null = no directional hypothesis or can't determine
+  const dirAligned = (hypDir && actDir) ? (hypDir === actDir) : null;
+
+  const [labelA, labelB] = getGroupLabels(raw);
+  const actDirLabel = (() => {
+    if (currentClaimType === 'directional') {
+      return actDir === 'increasing' ? 'upward (increasing)' : actDir === 'decreasing' ? 'downward (decreasing)' : null;
+    }
+    if (currentClaimType === 'comparative') {
+      if (actDir === 'a_higher') return `${labelA} is higher`;
+      if (actDir === 'a_lower')  return `${labelA} is lower`;
+    }
+    return null;
+  })();
+
+  let vClass, vHead, vSub;
+  if (isDesc) {
+    // ITS: check for a level-shift p-value the backend may return separately
+    const itsP = result.p_level_shift ?? result.p_intervention ?? null;
+    if (itsP !== null) {
+      const itsSig = itsP < alpha;
+      vClass = itsSig ? 'sig' : 'notsig';
+      vHead  = itsSig ? '✓ Significant Level Shift' : '— No Significant Level Shift';
+      vSub   = itsSig
+        ? `The post-intervention level is significantly different from pre-intervention (α = ${alpha}).`
+        : `No statistically significant level shift detected at α = ${alpha}.`;
+    } else {
+      // Interrupted time series without a level-shift p-value: derive from pre/post means
+      const pre  = result.pre_mean  ?? result.mean_before;
+      const post = result.post_mean ?? result.mean_after;
+      const hasShift = pre !== undefined && post !== undefined && pre !== post;
+      vClass = hasShift ? 'sig'      : 'notsig';
+      vHead  = hasShift ? '✓ Structural Shift Detected' : '— No Structural Shift Detected';
+      vSub   = hasShift
+        ? `Mean shifted from ${Number(pre).toFixed(2)} (pre) to ${Number(post).toFixed(2)} (post) at the intervention point.`
+        : `No meaningful shift in level detected at the intervention point.`;
+    }
+  } else if (sig && dirAligned === false) {
+    // Statistically significant — but in the opposite direction to the hypothesis
+    vClass = 'contrary';
+    vHead  = '✗ Significant — Opposite Direction';
+    vSub   = `The effect is statistically significant (α = ${alpha}), but the data shows the ${actDirLabel ?? 'opposite direction'} — contradicting the stated hypothesis.`;
+  } else if (sig) {
+    vClass = 'sig';
+    // If no direction was stated but we can describe what was found, do so
+    const foundNote = (dirAligned === null && actDirLabel)
+      ? ` The observed direction: ${actDirLabel}.`
+      : '';
+    vHead  = '✓ Significant Effect';
+    vSub   = `Reject H₀. The observed effect is unlikely to be due to chance (α = ${alpha}).${foundNote}`;
+  } else {
+    vClass = 'notsig';
+    const foundNote = actDirLabel ? ` The data shows a ${actDirLabel} tendency, but it does not clear the significance bar.` : '';
+    vHead  = '— Insufficient Evidence';
+    vSub   = `Fail to reject H₀. No statistically significant effect detected at α = ${alpha}.${foundNote}`;
+  }
+
+  let pHtml = '';
+  if (hasP) {
+    const pVal    = result.p_value;
+    const pPct    = Math.min((pVal / 1) * 100, 100);
+    const pColor  = sig ? 'var(--teal)' : 'var(--red)';
+    const alphaPct = Math.min(alpha * 100, 100);
+    pHtml = `
+      <div class="pvalue-block">
+        <div class="pvalue-header-row">
+          <span class="pvalue-eyebrow">P-Value</span>
+          <span class="pvalue-number">${pVal < 0.0001 ? pVal.toExponential(3) : pVal.toFixed(4)}</span>
+        </div>
+        <div class="pvalue-track">
+          <div class="pvalue-fill" style="width:${pPct}%;background:${pColor};"></div>
+          <div class="pvalue-threshold" style="left:${alphaPct}%;"></div>
+        </div>
+        <div style="position:relative;height:18px;">
+          <span class="pvalue-threshold-label" style="left:${alphaPct}%;">α = ${alpha}</span>
+        </div>
+      </div>`;
+  }
+
+  const skip = new Set(['test','significant']);
+  const statsRows = Object.entries(result).filter(([k]) => !skip.has(k)).map(([k,v]) => {
+    let cls = '', display;
+    if (Array.isArray(v))       { display = `[${v.slice(0,8).join(', ')}${v.length>8?' …':''}]`; cls = 'array'; }
+    else if (typeof v==='boolean') { display = v.toString(); }
+    else if (v === null)        { display = '—'; }
+    else {
+      display = fmtNum(v);
+      if (typeof v === 'number') {
+        const pos = k.includes('estimate')||k.includes('change')||k.includes('difference');
+        if (pos && v > 0) cls = 'positive';
+        else if (pos && v < 0) cls = 'negative';
+      }
+    }
+    return `<div class="stat-row"><span class="stat-key">${k}</span><span class="stat-value ${cls}">${display}</span></div>`;
+  }).join('');
+
+  const hasSeries   = Array.isArray(raw.series)   && raw.series.length   > 2;
+  const hasGroupA   = Array.isArray(raw.group_a)   && raw.group_a.length  > 1;
+  const hasSampleA  = Array.isArray(raw.sample_a)  && raw.sample_a.length > 1;
+  const hasObserved = Array.isArray(raw.observed)  && raw.observed.length > 1;
+  const chartHtml   = (hasSeries || hasGroupA || hasSampleA || hasObserved)
+    ? `<div class="chart-section"><div class="section-label">Visualization</div><div class="chart-wrap"><canvas id="resultChart"></canvas></div></div>`
+    : '';
+
+  const plainText = buildPlainEnglish(resolvedTest?.test, result, raw);
+
+  document.getElementById('resultsPanel').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+      <div class="panel-eyebrow">Results — ${resolvedTest?.name}</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-sample print-export-btn"
+                style="font-size:9px;padding:5px 12px;"
+                onclick="downloadResults()">↓ Download JSON</button>
+        <button class="btn btn-sample print-export-btn"
+                style="font-size:9px;padding:5px 12px;"
+                onclick="window.print()">↓ Export PDF</button>
+      </div>
+    </div>
+    <div class="plain-english">
+      <div class="plain-english-label">Interpretation</div>
+      <div class="plain-english-text">${plainText}</div>
+    </div>
+    <div class="verdict ${vClass}">
+      <div class="verdict-label">Verdict</div>
+      <div class="verdict-headline">${vHead}</div>
+      <div class="verdict-sub">${vSub}</div>
+    </div>
+    ${pHtml}
+    <div class="stats-section">
+      <div class="section-label">Statistics</div>
+      ${statsRows}
+    </div>
+    ${chartHtml}`;
+
+  if (hasSeries)        drawSeriesChart(raw.series, raw.intervention_index, result.change_point ?? result.change_points?.[0]);
+  else if (hasGroupA)   drawGroupChart(raw);
+  else if (hasSampleA)  drawKSChart(raw.sample_a, raw.sample_b, raw._labelA, raw._labelB);
+  else if (hasObserved) drawChiSquareChart(raw.observed, raw.expected, raw.categoryLabels);
+
+  const isAnovaKW = ['anova_test','kruskal_wallis_test'].includes(resolvedTest?.test);
+  if (isAnovaKW) {
+    const groupKeys = ['group_a','group_b','group_c','group_d','group_e','group_f'];
+    const validKeys = groupKeys.filter(k => Array.isArray(raw[k]) && raw[k].length > 0);
+    _lastPostHocGroups = validKeys.map(k => raw[k]);
+    _lastPostHocLabels = raw._groupLabels?.slice() ??
+      validKeys.map((_, i) => `Group ${String.fromCharCode(65 + i)}`);
+  }
+
+  if (isAnovaKW) {
+    const testLabel  = resolvedTest.test === 'anova_test' ? "Tukey's HSD" : "Dunn's Test";
+    const parentTest = resolvedTest.test === 'anova_test' ? 'ANOVA' : 'Kruskal–Wallis';
+    const sigContext = sig
+      ? `${parentTest} found a significant overall difference. ${testLabel} identifies exactly which group pairs are driving it.`
+      : `${parentTest} did not find a significant overall difference (p ≥ α). You can still run ${testLabel} to explore pairwise comparisons, though treat those results cautiously.`;
+    document.getElementById('resultsPanel').insertAdjacentHTML('beforeend', `
+      <div id="postHocSection" style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px;">
+        <div class="section-label">Post-hoc Pairwise Analysis</div>
+        <div style="font-size:11px;color:var(--text-muted);margin:8px 0 12px;line-height:1.6;">${sigContext}</div>
+        <button class="btn btn-sample" id="postHocBtn" onclick="runPostHoc()">Run ${testLabel} →</button>
+        <div id="postHocResults"></div>
+      </div>`);
+  }
+}
+
+/* ── CHARTS ──────────────────────────────────────────────────── */
+const SERIES_COLORS = [
+  { line: '#e8a020', fill: 'rgba(232,160,32,0.10)' },
+  { line: '#00c99a', fill: 'rgba(0,201,154,0.10)'  },
+  { line: '#7eb3ff', fill: 'rgba(126,179,255,0.10)' },
+  { line: '#ff7eb3', fill: 'rgba(255,126,179,0.10)' },
+  { line: '#c4b5fd', fill: 'rgba(196,181,253,0.10)' },
+];
+const SCATTER_COLORS = [
+  { border: '#e8a020', fill: 'rgba(232,160,32,0.55)' },
+  { border: '#00c99a', fill: 'rgba(0,201,154,0.55)'  },
+  { border: '#7eb3ff', fill: 'rgba(126,179,255,0.55)' },
+  { border: '#ff7eb3', fill: 'rgba(255,126,179,0.55)' },
+];
+const CHART_OPTS = {
+  responsive: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid:{ color:'#162233' }, ticks:{ color:'#4d6880', font:{ family:'IBM Plex Mono', size:9 } } },
+    y: { grid:{ color:'#162233' }, ticks:{ color:'#4d6880', font:{ family:'IBM Plex Mono', size:9 } } }
+  }
+};
+
+function drawSeriesChart(series, intIdx, changePoint) {
+  const c = SERIES_COLORS[0];
+  const datasets = [{ data: series, borderColor: c.line, backgroundColor: c.fill, borderWidth: 1.8, pointRadius: 2, tension: 0.3, fill: true }];
+  const marker = intIdx ?? changePoint ?? null;
+  if (marker !== null) datasets.push({
+    data: series.map((_,i) => i===marker ? Math.max(...series)*1.1 : null),
+    type:'bar', backgroundColor:'rgba(0,201,154,0.15)', barThickness:2, borderColor:'#00c99a', borderWidth:1
+  });
+  chartInst = new Chart(
+    document.getElementById('resultChart').getContext('2d'),
+    { type:'line', data:{ labels:series.map((_,i)=>i), datasets }, options:CHART_OPTS }
+  );
+}
+
+function drawGroupChart(raw) {
+  const keys   = Object.keys(raw)
+    .filter(k => /^group_[a-z]$/.test(k))
+    .sort();
+
+  const groups = keys
+    .map(k => raw[k])
+    .filter(g => Array.isArray(g) && g.length > 0);
+
+  const labels = raw._groupLabels ??
+    groups.map((_, i) => `Group ${String.fromCharCode(65 + i)}`);
+
+  const datasets = [];
+
+  groups.forEach((group, gi) => {
+    const col = SCATTER_COLORS[gi % SCATTER_COLORS.length];
+
+    // Raw observations with horizontal jitter
+    datasets.push({
+      label: labels[gi],
+      data: group.map(v => ({
+        x: gi + (Math.random() - 0.5) * 0.25,
+        y: v
+      })),
+      backgroundColor: col.fill,
+      borderColor: col.border,
+      borderWidth: 1,
+      pointRadius: 4
+    });
+
+    // Mean marker
+    const mean =
+      group.reduce((sum, v) => sum + v, 0) / group.length;
+
+    datasets.push({
+      label: `${labels[gi]} Mean`,
+      data: [{ x: gi, y: mean }],
+      backgroundColor: '#e8a020',
+      borderColor: '#ffffff',
+      borderWidth: 2,
+      pointRadius: 8,
+      pointStyle: 'rectRot'
+    });
+  });
+
+  chartInst = new Chart(
+    document.getElementById('resultChart').getContext('2d'),
+    {
+      type: 'scatter',
+      data: { datasets },
+      options: {
+        ...CHART_OPTS,
+
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              color: '#8aa0b8',
+              font: {
+                family: 'IBM Plex Mono',
+                size: 10
+              },
+              boxWidth: 10,
+
+              // Hide mean markers from legend
+              filter: item => !item.text.endsWith(' Mean')
+            }
+          }
+        },
+
+        scales: {
+          x: {
+            min: -0.5,
+            max: groups.length - 0.5,
+
+            grid: {
+              color: 'rgba(255,255,255,0.05)'
+            },
+
+            ticks: {
+              color: '#4d6880',
+              callback: function(value) {
+                return labels[value] ?? '';
+              }
+            }
+          },
+
+          y: {
+            ...CHART_OPTS.scales.y
+          }
+        }
+      }
+    }
+  );
+}
+
+// Empirical CDF overlay — more meaningful for KS test than a plain line chart
+function drawKSChart(a, b, labelA, labelB) {
+  const buildCDF = arr => {
+    const sorted = [...arr].sort((x, y) => x - y);
+    const n = sorted.length;
+    return sorted.map((v, i) => ({ x: v, y: (i + 1) / n }));
+  };
+  const cdfA = buildCDF(a);
+  const cdfB = buildCDF(b);
+  const cA = SERIES_COLORS[0], cB = SERIES_COLORS[1];
+  chartInst = new Chart(document.getElementById('resultChart').getContext('2d'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: labelA || 'Sample A', data: cdfA, borderColor: cA.line, backgroundColor: 'transparent', borderWidth: 1.8, pointRadius: 2, stepped: 'before', fill: false },
+        { label: labelB || 'Sample B', data: cdfB, borderColor: cB.line, backgroundColor: 'transparent', borderWidth: 1.8, pointRadius: 2, stepped: 'before', fill: false },
+      ]
+    },
+    options: {
+      ...CHART_OPTS,
+      plugins: { legend: { display: true, labels: { color: '#8aa0b8', font: { family: 'IBM Plex Mono', size: 10 }, boxWidth: 10 } } },
+      scales: {
+        x: { ...CHART_OPTS.scales.x, type: 'linear',
+             title: { display: true, text: 'Value', color: '#4d6880', font: { family: 'IBM Plex Mono', size: 9 } } },
+        y: { ...CHART_OPTS.scales.y, min: 0, max: 1,
+             title: { display: true, text: 'Cumulative probability', color: '#4d6880', font: { family: 'IBM Plex Mono', size: 9 } } }
+      }
+    }
+  });
+}
+
+function drawChiSquareChart(observed, expected, categoryLabels) {
+  const observedNum = observed.map(Number);
+
+  const n = observedNum.reduce((s, v) => s + v, 0);
+
+  const labels = (categoryLabels?.length === observedNum.length)
+    ? categoryLabels
+    : observedNum.map((_, i) => `Cat. ${i + 1}`);
+
+  const exp = (Array.isArray(expected) && expected.length === observedNum.length)
+    ? expected.map(Number)
+    : observedNum.map(() => n / observedNum.length);
+
+  // χ² contributions per category
+  const chiContrib = observedNum.map((o, i) => {
+    const e = exp[i];
+    return e === 0 ? 0 : Math.pow(o - e, 2) / e;
+  });
+
+  chartInst = new Chart(
+    document.getElementById('resultChart').getContext('2d'),
+    {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Observed',
+            data: observedNum,
+            backgroundColor: 'rgba(232,160,32,0.55)',
+            borderColor: '#e8a020',
+            borderWidth: 1
+          },
+          {
+            label: 'Expected',
+            data: exp,
+            backgroundColor: 'rgba(0,201,154,0.30)',
+            borderColor: '#00c99a',
+            borderWidth: 1
+          },
+          {
+            label: 'Chi-square Contribution',
+            data: chiContrib,
+            backgroundColor: 'rgba(120,140,255,0.35)',
+            borderColor: '#7a8cff',
+            borderWidth: 1,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        ...CHART_OPTS,
+
+        scales: {
+          ...CHART_OPTS.scales,
+
+          y1: {
+            position: 'right',
+            grid: {
+              drawOnChartArea: false
+            },
+            title: {
+              display: true,
+              text: 'χ² contribution'
+            }
+          }
+        },
+
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              color: '#8aa0b8',
+              font: { family: 'IBM Plex Mono', size: 10 },
+              boxWidth: 10
+            }
+          }
+        }
+      }
+    }
+  );
+}
+
+/* ── POST-HOC ────────────────────────────────────────────────── */
+let _lastPostHocGroups = null;
+let _lastPostHocLabels = null;
+
+async function runPostHoc() {
+  if (!_lastPostHocGroups || !resolvedTest) return;
+  const isAnova  = resolvedTest.test === 'anova_test';
+  const testName = isAnova ? 'tukey_hsd' : 'dunns_test';
+  const label    = isAnova ? "Tukey's HSD" : "Dunn's Test";
+  const btn = document.getElementById('postHocBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin"></span>Running ${label}…`; }
+  try {
+    const res  = await fetch(`${API}/debug/run-test`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ test_name: testName, data: { groups: _lastPostHocGroups } })
+    });
+    const json = await res.json();
+    if (json.status === 'success') { renderPostHocResults(json.result, isAnova); if (btn) btn.style.display = 'none'; }
+    else { toast(`Post-hoc error: ${json.message}`); if (btn) { btn.disabled = false; btn.innerHTML = `Run ${label} →`; } }
+  } catch {
+    toast('Cannot reach Flask server.');
+    if (btn) { btn.disabled = false; btn.innerHTML = `Run ${label} →`; }
+  }
+}
+
+function renderPostHocResults(result, isAnova) {
+  const pairs    = result.pairs || [];
+  const anySig   = result.any_significant;
+  const corrNote = result.correction ? ` · ${result.correction} corrected` : '';
+  const method   = isAnova ? "Tukey's HSD" : "Dunn's Test";
+  const tableRows = pairs.map(p => {
+    // Remap "Group A" → actual label from the groups used in the ANOVA/KW test
+    const labeledPair = p.pair.replace(/Group ([A-Z])/g, (_, letter) => {
+      const idx = letter.charCodeAt(0) - 65;
+      return _lastPostHocLabels?.[idx] ?? `Group ${letter}`;
+    });
+    const pDisplay = p.p_adj < 0.0001 ? p.p_adj.toExponential(2) : p.p_adj.toFixed(4);
+    const sigBadge = p.reject ? `<span style="color:var(--teal);font-weight:500;">✓ sig</span>` : `<span style="color:var(--text-dim);">—</span>`;
+    const extraStat = p.z_stat !== undefined ? `<span style="color:var(--text-muted);font-size:10px;margin-right:14px;">z = ${Number(p.z_stat).toFixed(2)}</span>` : '';
+    return `<div class="stat-row"><span class="stat-key">${labeledPair}</span>
+      <span style="display:flex;align-items:baseline;gap:0;">
+        ${extraStat}
+        <span class="stat-value" style="font-size:10px;color:var(--text-soft);width:58px;text-align:right;margin-right:14px;">p = ${pDisplay}</span>
+        <span style="width:40px;text-align:right;font-size:11px;">${sigBadge}</span>
+      </span></div>`;
+  }).join('');
+  const summary = anySig
+    ? `<div style="margin-top:10px;font-size:11px;color:var(--teal);line-height:1.6;">✓ Pairs marked above are significantly different at α = ${alpha}.</div>`
+    : `<div style="margin-top:10px;font-size:11px;color:var(--text-muted);line-height:1.6;">No individual pairs differ significantly after correction.</div>`;
+  document.getElementById('postHocResults').innerHTML = `
+    <div style="margin-top:14px;">
+      <div class="section-label">${method} — Pairwise Comparisons${corrNote}</div>
+      <div style="margin-top:2px;">${tableRows}</div>
+      ${summary}
+    </div>`;
+}
+
+/* ── HEALTH ─────────────────────────────────────────────────── */
+async function checkHealth() {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  try {
+    const r = await fetch(`${API}/health`, { signal:AbortSignal.timeout(3000) });
+    if (r.ok) { dot.className='status-dot live'; txt.textContent='api connected'; }
+    else       { dot.className='status-dot error'; txt.textContent='api error'; }
+  } catch { dot.className='status-dot error'; txt.textContent='api offline'; }
+}
+
+/* ── INIT ───────────────────────────────────────────────────── */
+checkHealth();
+setInterval(checkHealth, 12000);
+renderFreeText();
+</script>
+</body>
+</html>
