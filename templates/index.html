@@ -1588,8 +1588,15 @@ async function runFreeText() {
   setFTLoading(true);
   document.getElementById('resultsPanel').innerHTML = `
     <div class="results-empty"><span class="spin"></span>
-      <div class="results-empty-text" style="margin-top:12px">Analysing hypothesis…</div>
+      <div class="results-empty-text" id="ftLoadingText" style="margin-top:12px">Analysing hypothesis…</div>
     </div>`;
+  // The free hosting tier spins down after idle periods, so a cold request can
+  // take 30-50s to wake back up. Swap the message after a few seconds so that
+  // wait reads as "waking up," not "stuck."
+  const wakingTimer = setTimeout(() => {
+    const el = document.getElementById('ftLoadingText');
+    if (el) el.textContent = 'Waking up the server… free hosting spins down when idle, this can take up to a minute.';
+  }, 4000);
 
   try {
     const res  = await fetch(`${API}/run-hypothesis`, {
@@ -1638,9 +1645,9 @@ async function runFreeText() {
     panel.insertAdjacentHTML('afterbegin', phantomHtml + warningHtml + hypCard);
 
   } catch {
-    toast('Cannot reach Flask server — is it running on port 5000?');
+    toast('Cannot reach the server — it may still be waking up, try again in a moment');
     showErrorResults(`Cannot reach ${API}`);
-  } finally { setFTLoading(false); }
+  } finally { clearTimeout(wakingTimer); setFTLoading(false); }
 }
 
 /* ── SAMPLE SIZE WARNINGS ────────────────────────────────────── */
@@ -2517,14 +2524,21 @@ function renderPostHocResults(result, isAnova) {
 }
 
 /* ── HEALTH ─────────────────────────────────────────────────── */
+let _healthCheckInFlight = false;
 async function checkHealth() {
+  if (_healthCheckInFlight) return;
+  _healthCheckInFlight = true;
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
+  // Free-tier hosting can take up to a minute to wake from idle — give it room
+  // before calling it offline, and say "waking up" instead of "error" while waiting.
+  const wakingTimer = setTimeout(() => { txt.textContent = 'waking up…'; }, 2500);
   try {
-    const r = await fetch(`${API}/health`, { signal:AbortSignal.timeout(3000) });
+    const r = await fetch(`${API}/health`, { signal:AbortSignal.timeout(45000) });
     if (r.ok) { dot.className='status-dot live'; txt.textContent='api connected'; }
     else       { dot.className='status-dot error'; txt.textContent='api error'; }
   } catch { dot.className='status-dot error'; txt.textContent='api offline'; }
+  finally { clearTimeout(wakingTimer); _healthCheckInFlight = false; }
 }
 
 /* ── INIT ───────────────────────────────────────────────────── */
