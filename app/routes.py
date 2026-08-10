@@ -76,11 +76,11 @@ def run_hypothesis_route():
 
 
     except Exception as e:
+        traceback.print_exc()  # server-side log only — don't leak internals to the client
         return jsonify({
             "status": "error",
             "type": "internal_error",
-            "message": str(e),
-            "trace": traceback.format_exc()
+            "message": str(e)
         }), 500
 
 
