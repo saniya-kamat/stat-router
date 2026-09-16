@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lighthouse — Hypothesis Testing</title>
+  <title>StatRouter — Hypothesis Testing</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -455,7 +455,7 @@
       <div class="beacon-core"></div>
     </div>
     <div>
-      <div class="logo-name">Lighthouse</div>
+      <div class="logo-name">StatRouter</div>
       <span class="logo-sub">Hypothesis Testing Infrastructure</span>
     </div>
   </div>
@@ -751,7 +751,7 @@ function onFTHypInput(text) {
       document.getElementById('ft-data-fields').innerHTML = '';
     }
     // Auto-expand the select when the user has written a substantial hypothesis
-    // but Lighthouse couldn't classify it — give them an immediate escape hatch
+    // but StatRouter couldn't classify it — give them an immediate escape hatch
     if (text.trim().length > 8 && overSel && overSel.style.display === 'none') {
       overSel.style.display = '';
       _selectAutoOpened = true;
@@ -789,8 +789,8 @@ const UPLOAD_INSTRUCTIONS = {
   causal_series:  'Upload a CSV or Excel file with <strong>one column</strong> of values measured over time, ordered from earliest to latest.',
   causal_adjacent:'Upload a CSV or Excel file with <strong>one column</strong> of values measured over time, ordered from earliest to latest.',
   causal_did:     'Upload a CSV or Excel file with <strong>four numeric columns</strong>: treatment_before, treatment_after, control_before, control_after. Each column holds the measurements for that group.',
-  z_test:         'Upload a CSV or Excel file with <strong>one column of historical values</strong> (your normal baseline data). Lighthouse will compute the mean and spread automatically.',
-  distributional: 'Upload a CSV or Excel file with <strong>one column of historical values</strong> (your normal baseline data). Lighthouse will compute the mean and spread automatically.',
+  z_test:         'Upload a CSV or Excel file with <strong>one column of historical values</strong> (your normal baseline data). StatRouter will compute the mean and spread automatically.',
+  distributional: 'Upload a CSV or Excel file with <strong>one column of historical values</strong> (your normal baseline data). StatRouter will compute the mean and spread automatically.',
   chi_square:     'Upload a CSV or Excel file with <strong>category counts</strong>. Use a two-column file (category name + observed count) or a single column of counts. Add a second count column to supply expected values.',
   ks_test:        'Upload a CSV or Excel file with <strong>two numeric columns</strong>: one per sample. Column headers become sample labels.',
 };
@@ -888,7 +888,7 @@ function renderManualFields(effType) {
   }
   if (effType === 'z_test' || effType === 'distributional') {
     return `
-      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter your historical baseline values — Lighthouse will compute the mean and typical spread automatically. Then provide the single current value you want to test.</div>
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter your historical baseline values — StatRouter will compute the mean and typical spread automatically. Then provide the single current value you want to test.</div>
       <div class="field-group">
         <div class="field-label">Historical values</div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">Past measurements that represent normal behaviour, separated by commas.</div>
@@ -905,7 +905,7 @@ function renderManualFields(effType) {
   }
   if (effType === 'chi_square') {
     return `
-      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter the observed count for each category. Optionally supply expected counts — if blank, Lighthouse assumes equal proportions.</div>
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">Enter the observed count for each category. Optionally supply expected counts — if blank, StatRouter assumes equal proportions.</div>
       <div class="field-group">
         <div class="field-label">Observed counts</div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">One count per category, comma-separated.</div>
@@ -946,7 +946,7 @@ function effectiveInputType() {
 
 function renderSubtypePicker(claimType) {
   const cards = claimType === 'causal_adjacent' ? [
-    { id: 'series', title: 'Single Time Series',    tests: 'ITS · Change Point', desc: 'You have one continuous series of measurements. Lighthouse will detect whether and when a structural change occurred.' },
+    { id: 'series', title: 'Single Time Series',    tests: 'ITS · Change Point', desc: 'You have one continuous series of measurements. StatRouter will detect whether and when a structural change occurred.' },
     { id: 'did',    title: 'Treatment vs Control',  tests: 'Diff-in-Differences', desc: 'You ran an experiment with a treatment group and a control group, both measured before and after an intervention.' },
   ] : [
     { id: 'z_test',     title: 'Anomaly Check',     tests: 'Z-Test',       desc: 'Is a single recent value unusually far from historical norms? Requires a baseline history and one current value.' },
@@ -1392,7 +1392,7 @@ async function runFreeText() {
   if (!hypText) { toast('Please enter your hypothesis'); return; }
 
   const claimType = currentClaimType;
-  if (!claimType) { toast('Keep typing — Lighthouse needs more detail to detect the analysis type'); return; }
+  if (!claimType) { toast('Keep typing — StatRouter needs more detail to detect the analysis type'); return; }
 
   const eff = effectiveInputType();
 
@@ -2028,7 +2028,7 @@ function downloadResults() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url;
-  a.download = `lighthouse-result-${Date.now()}.json`;
+  a.download = `statrouter-result-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

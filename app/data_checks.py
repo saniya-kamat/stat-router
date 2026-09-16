@@ -3,7 +3,7 @@ import numpy as np
 # Basic validation entry point
 def validate_input(hypothesis, data):
     """
-    Main validation gate for Lighthouse 4.
+    Main validation gate for StatRouter.
 
     Ensures:
     - hypothesis structure is valid

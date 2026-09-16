@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "lighthouse",
+      "name": "statrouter",
       "runtimeExecutable": "proto_env/bin/python",
       "runtimeArgs": ["main.py"],
       "port": 5000,

@@ -26,7 +26,7 @@ def index():
 def health():
     return jsonify({
         "status": "ok",
-        "service": "lighthouse-hypothesis-service"
+        "service": "statrouter-hypothesis-service"
     })
 
 

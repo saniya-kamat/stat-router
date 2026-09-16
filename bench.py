@@ -169,7 +169,7 @@ def print_rows(rows):
 
 def main():
     print(f"\n{BOLD}{'═' * 56}")
-    print(f"  Lighthouse 4 — Performance Benchmark")
+    print(f"  StatRouter — Performance Benchmark")
     print(f"  {REPS} reps / {REPS_SLOW} reps (slow@large)   |   sizes: {list(SIZES.keys())}")
     print(f"{'═' * 56}{RESET}")
 

@@ -1,4 +1,4 @@
-# PROTOTYPE README
+# STATROUTER
 *Built as a self-directed side project during my internship at Incedo, exploring hypothesis-testing automation independent of the production system.*
 
 This is an automated hypothesis-testing prototype for business data that turns a statement like “churn is going up” or “revenue changed after the launch” into a statistical test, and then returns a verdict based on the underlying data and a p-value threshold. In plain language, a statistically supported statement means the system looked at the evidence in the data and found enough signal to reject the “no effect / no change / no trend” baseline with a chosen confidence level; otherwise, it fails to reject the null hypothesis.
@@ -6,13 +6,13 @@ This is an automated hypothesis-testing prototype for business data that turns a
 To be clear, this prototype is a rule-based statistical routing engine, not an AI/ML system. The “intelligence” is in how it inspects your data and picks the right test — there is no model making predictions anywhere in the pipeline.
 
 ## Project Overview
-Lighthouse 4 is designed to reduce the manual work of choosing the right statistical test for business questions. Instead of asking analysts to decide between trend tests, group-comparison tests, causal-style tests, and distribution tests, the system routes a hypothesis and its data into a test family automatically and returns an interpretable result. The prototype also supports a lightweight UI and sample datasets that demonstrate the main business cases.
+StatRouter is designed to reduce the manual work of choosing the right statistical test for business questions. Instead of asking analysts to decide between trend tests, group-comparison tests, causal-style tests, and distribution tests, the system routes a hypothesis and its data into a test family automatically and returns an interpretable result. The prototype also supports a lightweight UI and sample datasets that demonstrate the main business cases.
 
 ## Routing Logic
 The system starts by asking the user what claim they'd like to test and then routing to one of four hypothesis testing families based on their answer: Directional, Comparative, Causal, or Distributional. That claim type determines both the test-selection logic and the expected input shape, which is how the prototype avoids forcing every problem into the same statistical template. Once it knows the claim type, the system doesn't just pick one fixed test — it **inspects the actual data** to choose the most appropriate test for your exact scenario. 
 
 ### How Test Selection Works
-The clever part of Lighthouse 4 is the selection step, which runs two real statistical checks on your data before committing to a test:
+The clever part of StatRouter is the selection step, which runs two real statistical checks on your data before committing to a test:
 
 - **Normality (Shapiro–Wilk).** For group comparisons, the system tests whether each group looks normally distributed. If everything looks normal it uses the parametric test (t-test / ANOVA); otherwise it falls back to the non-parametric equivalent (Mann–Whitney / Kruskal–Wallis). To stay sensible at the extremes, it treats very small samples (n < 3) and very large ones (n > 5000) as “normal enough” and relies on the Central Limit Theorem rather than over-rejecting.
 - **Autocorrelation (lag-1, Bartlett bound).** For trend detection on a time series, the system checks whether the series is autocorrelated. If it is, it prewhitens the data first so the autocorrelation doesn't artificially inflate the trend's significance.
